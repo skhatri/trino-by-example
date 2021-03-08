@@ -1,0 +1,107 @@
+version: '3.7'
+volumes:
+    hivedb: {}
+    coordinatordb: {}
+    workerdb: {}
+services:
+    postgres:
+      image: postgres:9.4
+      container_name: postgres
+      environment:
+          - POSTGRES_USER=postgres
+          - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          - POSTGRES_DB=postgres
+      volumes:
+        - hivedb:/var/lib/postgresql/data
+        - ./postgres/scripts:/docker-entrypoint-initdb.d/
+      ports:
+        - "5432:5432"
+      networks:
+        ntrino:
+          aliases:
+            - postgres
+      healthcheck:
+          test: ["CMD-SHELL", "pg_isready -U postgres"]
+          interval: "20s"
+          timeout: "20s"
+          retries: 3
+
+    hive:
+      image: skhatri/hive:3.1.2
+      build: hive/
+      container_name: hive
+      environment:
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
+        - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      volumes:
+        - ./hive/conf/hive-site.xml:/opt/app/apache-hive-3.1.2-bin/conf/hive-site.xml
+        - ./hive/data:/tmp/hive
+      ports:
+        - "10000:10000"
+        - "8093:8093"
+      networks:
+        ntrino:
+          aliases:
+            - hive
+      depends_on:
+        postgres:
+          condition: service_healthy
+
+    coordinator:
+      image: trinodb/trino:352
+      container_name: coordinator
+      environment:
+        - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
+        - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      ports:
+        - "8080:8080"
+        - "8443:8443"
+      expose:
+        - "8080"
+        - "8443"
+      volumes:
+        - coordinatordb:/data/trino
+        - ./coordinator:/etc/trino
+        - ./security:/opt/trino/security
+        - ./certs:/opt/trino/certs
+      networks:
+        ntrino:
+          aliases:
+            - coordinator
+      depends_on:
+        postgres:
+          condition: service_healthy
+      healthcheck:
+          test: ["CMD-SHELL", "curl -sS http://localhost:8080/|| exit 1"]
+          interval: "20s"
+          timeout: "20s"
+          retries: 3
+
+
+    worker-1:
+      image: trinodb/trino:352
+      container_name: worker-1
+      environment:
+        - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
+        - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      ports:
+        - "8090:8080"
+        - "9443:8443"
+      volumes:
+        - workerdb:/data/trino
+        - ./worker:/etc/trino
+        - ./certs:/opt/trino/certs
+      networks:
+        ntrino:
+          aliases:
+            - worker-1
+      depends_on:
+        coordinator:
+          condition: service_healthy
+
+networks:
+  ntrino: {}
+
+
+      

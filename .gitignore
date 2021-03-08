@@ -1,0 +1,8 @@
+trino
+.env
+*tar.gz
+hive/data
+hive-site.xml
+.tmp
+
+

@@ -1,0 +1,85 @@
+{
+    "catalogs": [
+      {
+        "user": "admin",
+        "catalog": "(mysql|system)",
+        "allow": "all"
+      },
+      {
+        "group": "finance|human_resources",
+        "catalog": "postgres",
+        "allow": true
+      },
+      {
+        "catalog": "(memory|tpch|tpcds|hive|jmx)",
+        "allow": "all"
+      },
+      {
+        "user": "alice",
+        "catalog": "postgresql",
+        "allow": "read-only"
+      },
+      {
+        "catalog": "system",
+        "allow": "none"
+      }
+    ],
+
+    "schemas": [
+        {
+          "user": "admin",
+          "schema": ".*",
+          "owner": true
+        },
+        {
+          "user": "guest",
+          "owner": false
+        },
+        {
+          "catalog": "default",
+          "schema": "default",
+          "owner": true
+        }
+      ],
+
+      "tables": [
+        {
+          "user": "admin",
+          "privileges": ["SELECT", "INSERT", "DELETE", "OWNERSHIP"]
+        },
+        {
+          "user": "banned_user",
+          "privileges": []
+        },
+        {
+          "catalog": "default",
+          "schema": "hr",
+          "table": "employee",
+          "privileges": ["SELECT"],
+          "filter": "user = current_user",
+          "filter_environment": {
+            "user": "admin"
+          }
+        },
+        {
+          "catalog": "default",
+          "schema": "default",
+          "table": ".*",
+          "privileges": ["SELECT"],
+          "columns" : [
+             {
+                "name": "address",
+                "allow": false
+             },
+             {
+                "name": "SSN",
+                "mask": "'XXX-XX-' + substring(credit_card, -4)",
+                "mask_environment": {
+                  "user": "admin"
+                }
+             }
+          ]
+        }
+      ]
+
+  }
