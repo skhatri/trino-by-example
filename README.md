@@ -3,7 +3,12 @@ This is a recipe to create a Presto/Trino cluster with hive.
 
 ### Tasks
 - Download Client
-- 
+- Configure Environment/Secrets
+- Test Trino Connectivity
+- Create Table in Hive with S3
+- Queries using Hive
+- Queries using Presto
+
 
 ### Download client
 ```
@@ -26,12 +31,12 @@ Run ```./env.sh``` to substitute S3 and Postgres password in hive-site.xml
 docker-compose up can be run using ```make up```
 Check the progress using ```make ps``` and once all containers are up, navigate to http://localhost:8443/ui/ with credentials admin/password to view the presto UI.
 
-### Trino Connectivity
+### Test Trino Connectivity
 Run ```make presto-cli``` with password as "password" to login to presto using the presto executable jar.
 Here issue command like ```show catalogs``` to see all available catalogs for query. 
 
 
-### Preparing data for Hive S3
+### Create Table in Hive with S3
 I used by google fit app data for this
 
 BUCKET_NAME=my-dataset
@@ -79,15 +84,16 @@ ADD PARTITION (load_date='2021-03-06') LOCATION 's3a://${hivevar:bucket_name}/da
 ```
 
 
+### Queries using Hive
 Just using hive, we can do the following queries as well.
 
-### How much have I walked since I installed the fit app?
+#### How much have I walked since I installed the fit app?
 ```
 use fitness;
 select sum(step_count) as steps, sum(distance)/1000 as distance_in_kms from activity;
 ```
 
-### Monthly activity summary
+#### Monthly activity summary
 ```
 select year(activity_date), month(activity_date), sum(heart_points) as heart_pt, sum(step_count) as steps, sum(distance)/1000 as km
 from activity
@@ -95,7 +101,7 @@ group by year(activity_date), month(activity_date);
 ```
 
 
-### Accessing Data from presto
+### Queries using Presto
 
 ```
 make presto
