@@ -3,17 +3,34 @@ This is a recipe to create a Presto/Trino cluster with hive.
 
 ### Tasks
 - Download Client
+- Certificates
 - Configure Environment/Secrets
 - Test Trino Connectivity
 - Create Table in Hive with S3
 - Queries using Hive
 - Queries using Presto
+- Running in Kubernetes
 
 
 ### Download client
 ```
 curl -O trino https://repo1.maven.org/maven2/io/trino/trino-cli/353/trino-cli-353-executable.jar
 chmod +x trino
+```
+
+### Certificates
+
+Generate keystore and truststore
+```
+keytool -genkeypair -alias trino -keyalg RSA -keystore certs/keystore.jks \
+-dname "CN=coordinator, OU=datalake, O=dataco, L=Sydney, ST=NSW, C=AU" \
+-ext san=dns:coordinator,dns:coordinator.presto,dns:coordinator.presto.svc,dns:coordinator.presto.svc.cluster.local,dns:localhost,ip:127.0.0.1,ip:192.168.64.5,ip:192.168.64.6 \
+-storepass password
+
+keytool -exportcert -file certs/trino.cer -alias trino -keystore certs/keystore.jks -storepass password
+
+keytool -import -v -trustcacerts -alias trino_trust -file certs/trino.cer -keystore certs/truststore.jks -storepass password -keypass password -noprompt
+
 ```
 
 ### Configure Environment/Secrets
@@ -116,4 +133,27 @@ use hive.fitness;
 select year(activity_date) as year, month(activity_date) as month, sum(heart_points) as heart_pt, sum(step_count) as steps, sum(distance)/1000 as km
 from activity
 group by year(activity_date), month(activity_date);
+```
+
+### Running in Kubernetes
+check manifests at kubernetes/manifests/coordinator and kubernetes/manifests/worker to apply them.
+
+#### updating certificates
+```
+base64 certs/keystore.jks|pbcopy
+base64 certs/truststore.jks|pbcopy
+base64 certs/trino.cer|pbcopy
+```
+Paste the base64 text in coordinator-cert-secret.yaml and worker-cert-secret.yaml
+
+#### Deploy to Kubernetes
+```
+kubectl apply -f kubernetes/manifest/coordinator
+kubectl apply -f kubernetes/manifest/worker
+```
+
+#### Undeploy
+```
+kubectl delete -f kubernetes/manifest/coordinator
+kubectl delete -f kubernetes/manifest/worker
 ```

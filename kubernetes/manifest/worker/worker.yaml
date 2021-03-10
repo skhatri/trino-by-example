@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: worker
+  labels:
+    app: worker
+spec:
+  serviceName: worker
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+      - name: worker
+        imagePullPolicy: IfNotPresent
+        image: "192.168.64.1:5000/trinodb/trino:352"
+        ports:
+        - name: httpport
+          containerPort: 8080
+        - name: tlsport
+          containerPort: 8443
+
+        resources:
+          requests:
+            cpu: 200m
+            memory: 1400Mi  
+        env:
+
+        - name: ENVIRONMENT
+          value: "development"
+
+
+        volumeMounts:
+        - mountPath: /etc/trino/catalog
+          name: catalog-config-mount
+        - mountPath: /etc/trino
+          name: config-mount
+        - mountPath: /opt/trino/certs
+          name: cert-secret-mount  
+        - mountPath: /data/trino
+          name: data-dir
+
+      volumes:
+      - name: config-mount
+        configMap:
+          name: worker-configmap
+      - name: catalog-config-mount
+        configMap:
+          name: worker-catalog-configmap
+      - name: cert-secret-mount
+        secret:
+          secretName: worker-cert-secret
+      - name: data-dir
+        emptyDir: {}
+         
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: worker
+spec:
+  selector:
+    app: worker
+  ports:
+  - name: httpport
+    protocol: TCP
+    port: 8080
+    targetPort: httpport
+  type: ClusterIP

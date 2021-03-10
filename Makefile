@@ -4,6 +4,9 @@
 presto:
 	@./trino --debug --user=admin --password --truststore-path=./certs/truststore.jks --truststore-password=password --server https://localhost:8443
 
+presto-k8s:
+	@./trino --debug --user=admin --password --truststore-path=./certs/truststore.jks --truststore-password=password --server https://coordinator:32538
+
 start: up
 up:
 	@docker-compose --env-file .env up -d
