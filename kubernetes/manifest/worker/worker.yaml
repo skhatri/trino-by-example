@@ -6,7 +6,7 @@ metadata:
     app: worker
 spec:
   serviceName: worker
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: worker
@@ -34,16 +34,27 @@ spec:
         - name: ENVIRONMENT
           value: "development"
 
+        command:
+          - /bin/sh
+        args:
+          - -c
+          - /opt/trino/init/init.sh
 
         volumeMounts:
-        - mountPath: /etc/trino/catalog
+        - mountPath: /tmp/catalog
           name: catalog-config-mount
-        - mountPath: /etc/trino
+        - mountPath: /tmp/main
           name: config-mount
         - mountPath: /opt/trino/certs
           name: cert-secret-mount  
         - mountPath: /data/trino
           name: data-dir
+        - mountPath: /etc/trino
+          name: config-dir
+        - mountPath: /opt/trino/init
+          name: initialiser-config-mount
+      
+      nodeSelector: {}
 
       volumes:
       - name: config-mount
@@ -55,9 +66,15 @@ spec:
       - name: cert-secret-mount
         secret:
           secretName: worker-cert-secret
+      - name: initialiser-config-mount
+        configMap:
+          name: worker-initialiser-config
+          defaultMode: 0755
       - name: data-dir
         emptyDir: {}
-         
+      - name: config-dir
+        emptyDir: {}
+
 ---
 kind: Service
 apiVersion: v1

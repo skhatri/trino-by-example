@@ -50,6 +50,9 @@ spec:
         - mountPath: /data/trino
           name: data-dir
 
+      nodeSelector: {}
+
+
       volumes:
       - name: config-mount
         configMap:
@@ -80,7 +83,7 @@ spec:
   ports:
   - name: tlsport
     protocol: TCP
-    port: 8443
+    port: 443
     targetPort: tlsport
     nodePort: 32538    
   type: NodePort

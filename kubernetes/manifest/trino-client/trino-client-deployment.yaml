@@ -32,6 +32,9 @@ spec:
           - /bin/sh
           - -c
           - sleep 1d
+
+      nodeSelector: {}
+
       volumes:
       - name: cert-secret-mount
         secret:
