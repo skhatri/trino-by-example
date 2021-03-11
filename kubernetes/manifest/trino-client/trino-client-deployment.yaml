@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trino-client
+  labels:
+    app: trino-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trino-client
+  template:
+    metadata:
+      labels:
+        app: trino-client
+    spec:
+      containers:
+      - name: trino-client
+        imagePullPolicy: Always
+        image: "192.168.64.1:5000/trinodb/trino-client:352"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi  
+
+        volumeMounts:
+        - mountPath: /opt/trino/certs
+          name: cert-secret-mount  
+        - mountPath: /opt/trino/client
+          name: configmap-mount
+        command:
+          - /bin/sh
+          - -c
+          - sleep 1d
+      volumes:
+      - name: cert-secret-mount
+        secret:
+          secretName: trino-client-cert-secret
+      - name: configmap-mount
+        configMap:
+          name: trino-client-sh-configmap
+          defaultMode: 0755

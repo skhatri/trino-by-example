@@ -24,7 +24,7 @@ Generate keystore and truststore
 ```
 keytool -genkeypair -alias trino -keyalg RSA -keystore certs/keystore.jks \
 -dname "CN=coordinator, OU=datalake, O=dataco, L=Sydney, ST=NSW, C=AU" \
--ext san=dns:coordinator,dns:coordinator.presto,dns:coordinator.presto.svc,dns:coordinator.presto.svc.cluster.local,dns:localhost,ip:127.0.0.1,ip:192.168.64.5,ip:192.168.64.6 \
+-ext san=dns:coordinator,dns:coordinator.presto,dns:coordinator.presto.svc,dns:coordinator.presto.svc.cluster.local,dns:coordinator-headless,dns:coordinator-headless.presto,dns:coordinator-headless.presto.svc,dns:coordinator-headless.presto.svc.cluster.local,dns:localhost,ip:127.0.0.1,ip:192.168.64.5,ip:192.168.64.6 \
 -storepass password
 
 keytool -exportcert -file certs/trino.cer -alias trino -keystore certs/keystore.jks -storepass password
@@ -150,10 +150,12 @@ Paste the base64 text in coordinator-cert-secret.yaml and worker-cert-secret.yam
 ```
 kubectl apply -f kubernetes/manifest/coordinator
 kubectl apply -f kubernetes/manifest/worker
+kubectl apply -f kubernetes/manifest/trino-client
 ```
 
 #### Undeploy
 ```
 kubectl delete -f kubernetes/manifest/coordinator
 kubectl delete -f kubernetes/manifest/worker
+kubectl delete -f kubernetes/manifest/trino-client
 ```
