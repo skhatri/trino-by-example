@@ -37,6 +37,8 @@ services:
       volumes:
         - ./hive/conf/hive-site.xml:/opt/app/apache-hive-3.1.2-bin/conf/hive-site.xml
         - ./hive/data:/tmp/hive
+        #copy output data directory from https://github.com/skhatri/spark-delta-by-example project
+        - ./hive/output:/opt/data/output
       ports:
         - "10000:10000"
         - "8093:8093"
@@ -65,6 +67,7 @@ services:
         - ./coordinator:/etc/trino
         - ./security:/opt/trino/security
         - ./certs:/opt/trino/certs
+        - ./hive/output:/opt/data/output
       networks:
         ntrino:
           aliases:
@@ -92,10 +95,27 @@ services:
         - workerdb:/data/trino
         - ./worker:/etc/trino
         - ./certs:/opt/trino/certs
+        - ./hive/output:/opt/data/output
       networks:
         ntrino:
           aliases:
             - worker-1
+      depends_on:
+        coordinator:
+          condition: service_healthy
+
+    superset:
+      image: superset-dev:0.2
+      container_name: superset
+      environment: []
+      volumes:
+      - ./certs:/opt/superset/certs
+      ports:
+        - "9000:8080"
+      networks:
+        ntrino:
+          aliases:
+            - superset
       depends_on:
         coordinator:
           condition: service_healthy
