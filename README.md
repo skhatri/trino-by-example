@@ -52,6 +52,21 @@ Check the progress using ```make ps``` and once all containers are up, navigate 
 Run ```make presto-cli``` with password as "password" to login to presto using the presto executable jar.
 Here issue command like ```show catalogs``` to see all available catalogs for query. 
 
+The same query can be run through rest URI
+
+```
+curl -k https://coordinator:32538/v1/statement/ \
+--header "Authorization: Basic YWRtaW46cGFzc3dvcmQ=" \
+--header "X-Trino-User: admin" \
+--header "X-Trino-Schema: sf1" \
+--header "X-Trino-Source: somesource" \
+--header "X-Trino-Time-Zone: UTC" \
+--header "X-Trino-Catalog: tpch" \
+--header "User-Agent: presto-cli" \
+--data "select * from nation"
+
+```
+
 
 ### Create Table in Hive with S3
 I used by google fit app data for this
@@ -100,6 +115,51 @@ ALTER TABLE activity
 ADD PARTITION (load_date='2021-03-06') LOCATION 's3a://${hivevar:bucket_name}/data/fit/load_date=2021-03-06';
 ```
 
+Create Delta Lake Table
+```
+CREATE DATABASE finance;
+
+
+DROP TABLE IF EXISTS finance.activity;
+
+#Using spark delta generated manifest
+CREATE EXTERNAL TABLE finance.activity(
+    account string,
+    txn_id string,
+    merchant string,
+    category string,
+    last_updated timestamp,
+    deleted boolean,
+    txn_date date,
+    amount float
+) partitioned by (version date)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
+STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.SymlinkTextInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+LOCATION '/opt/data/output/activity/_symlink_format_manifest/';
+
+MSCK REPAIR TABLE finance.activity;
+
+DROP TABLE IF EXISTS finance.activity_snapshot;
+
+CREATE EXTERNAL TABLE finance.activity_snapshot(
+    account string,
+    txn_id string,
+    merchant string,
+    category string,
+    last_updated timestamp,
+    deleted boolean,
+    txn_date date,
+    amount float
+) partitioned by (version date)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
+STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.SymlinkTextInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+LOCATION '/opt/data/output/activity/_delta_manifest/';
+
+MSCK REPAIR TABLE finance.activity_snapshot;
+
+```
 
 ### Queries using Hive
 Just using hive, we can do the following queries as well.
@@ -117,7 +177,6 @@ from activity
 group by year(activity_date), month(activity_date);
 ```
 
-
 ### Queries using Presto
 
 ```
@@ -134,6 +193,68 @@ select year(activity_date) as year, month(activity_date) as month, sum(heart_poi
 from activity
 group by year(activity_date), month(activity_date);
 ```
+
+### Query Delta Data with Presto
+
+View https://github.com/skhatri/spark-delta-by-example for relevant spark delta code
+
+#### Show available snapshots
+
+```
+select version, count(*) 
+from hive.finance.activity_snapshot
+group by version
+order by version asc;
+```
+
+#### Show latest
+```
+select count(*)
+from hive.finance.activity;
+```
+
+#### Find total number of activities by account
+
+```
+select account, count(*) from hive.finance.activity
+group by account;
+```
+
+#### As of a specific snapshot
+As of version 3, what was transaction id ```txn10``` labelled as?
+
+```
+select * from hive.finance.activity_snapshot
+where version=cast('2021-03-02' as date) and txn_id='txn10';
+
+select * from hive.finance.activity_snapshot
+where version=cast('2021-03-09' as date) and txn_id='txn10';
+
+```
+
+#### Latest Label
+What is the latest label of transaction id ```txn10``` and when was it last updated?
+```
+select * from hive.finance.activity
+where txn_id='txn10';
+
+```
+
+#### Label Change over time
+Acc5 bought something from Apple Store Sydney on 2021-03-05, how did the label for this transaction change over time?
+
+```
+#latest
+select account, txn_date, category, last_updated, txn_id
+from hive.finance.activity
+where account = 'acc5' and txn_date=cast('2021-03-05' as date) and merchant='Apple Store Sydney';
+
+#versioned
+select account, txn_date, category, last_updated, txn_id
+from hive.finance.activity_snapshot
+where version=cast('2021-03-05' as date) and account = 'acc5' and txn_date=cast('2021-03-05' as date) and merchant='Apple Store Sydney';
+```
+
 
 ### Running in Kubernetes
 check manifests at kubernetes/manifests/coordinator and kubernetes/manifests/worker to apply them.
