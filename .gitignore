@@ -4,6 +4,5 @@ trino
 hive/data
 hive-site.xml
 .tmp
-output
 
 
