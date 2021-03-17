@@ -1,0 +1,1 @@
+{{ include "postgres.fullname" . }} has been deployed.
