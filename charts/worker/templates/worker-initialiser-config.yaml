@@ -1,0 +1,16 @@
+apiVersion: "v1"
+kind: ConfigMap
+metadata:
+  name: {{ include "worker.fullname" . }}-initialiser-config
+  labels:
+    {{- include "worker.labels" . | nindent 4 }}
+data:
+  init.sh: |
+    cd /etc/trino
+    cp -r /tmp/catalog /etc/trino/
+    for x in $(ls /tmp/main/);
+    do
+      cp /tmp/main/$x /etc/trino/$x
+    done;
+    printf "node.environment=development\nnode.data-dir=/data/trino\nnode.id=$(hostname)\n" > /etc/trino/node.properties
+    /usr/lib/trino/bin/run-trino

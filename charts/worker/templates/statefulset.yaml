@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "worker.fullname" . }}
+  labels:
+    {{- include "worker.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "worker.fullname" . }}
+{{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+{{- end }}
+  selector:
+    matchLabels:
+      {{- include "worker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+    {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      labels:
+        {{- include "worker.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "worker.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: httpport
+              containerPort: {{ .Values.pod.httpport }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /v1/info/state
+              port: httpport
+          readinessProbe:
+            httpGet:
+              path: /v1/info/state
+              port: httpport
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          env:
+          - name: ENVIRONMENT
+            value: {{ .Values.environment }}
+
+          command:
+            - /bin/sh
+          args:
+            - -c
+            - /opt/trino/init/init.sh
+
+          volumeMounts:
+          - mountPath: /tmp/catalog
+            name: catalog-config-mount
+          - mountPath: /tmp/main
+            name: config-mount
+          - mountPath: /opt/trino/certs
+            name: cert-secret-mount  
+          - mountPath: /data/trino
+            name: data-dir
+          - mountPath: /etc/trino
+            name: config-dir
+          - mountPath: /opt/trino/init
+            name: initialiser-config-mount
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      volumes:
+      - name: config-mount
+        configMap:
+          name: {{ include "worker.fullname" . }}-configmap
+      - name: catalog-config-mount
+        configMap:
+          name: {{ include "worker.fullname" . }}-catalog-configmap
+      - name: cert-secret-mount
+        secret:
+          secretName: {{ include "worker.fullname" . }}-cert-secret
+      - name: initialiser-config-mount
+        configMap:
+          name: {{ include "worker.fullname" . }}-initialiser-config
+          defaultMode: 0755
+      - name: data-dir
+        emptyDir: {}
+      - name: config-dir
+        emptyDir: {}
