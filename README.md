@@ -269,14 +269,56 @@ Paste the base64 text in coordinator-cert-secret.yaml and worker-cert-secret.yam
 
 #### Deploy to Kubernetes
 ```
-kubectl apply -f kubernetes/manifest/coordinator
-kubectl apply -f kubernetes/manifest/worker
-kubectl apply -f kubernetes/manifest/trino-client
+Deploy postgres
+```
+./deploy.sh postgres
 ```
 
-#### Undeploy
+Initialise it once to create hive database
+
 ```
-kubectl delete -f kubernetes/manifest/coordinator
-kubectl delete -f kubernetes/manifest/worker
-kubectl delete -f kubernetes/manifest/trino-client
+kubectl exec -it postgres-0 -- psql -U postgres
+# create database hive;
+# \q
 ```
+
+Deploy other apps
+```
+./deploy.sh hive
+./deploy.sh coordinator
+./deploy.sh worker
+./deploy.sh trino-client
+./deploy.sh superset
+```
+
+Trino Connection can be configured in superset
+
+```
+url:
+presto://admin:password@coordinator-headless:8443/catalog/hive
+
+extra params:
+{
+    "metadata_params": {},
+    "engine_params": {
+        "connect_args": {
+            "protocol": "https",
+             "requests_kwargs": {
+                 "verify": "/opt/superset/certs/trino.pem"
+             }
+       }
+    },
+    "metadata_cache_timeout": {},
+    "schemas_allowed_for_csv_upload": []
+}
+```
+
+
+
+
+Scale Down resources if there are resource issues
+```
+helm del trino-client
+kubectl scale sts worker --replicas=1
+```
+
