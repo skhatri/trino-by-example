@@ -268,8 +268,9 @@ base64 certs/trino.cer|pbcopy
 Paste the base64 text in coordinator-cert-secret.yaml and worker-cert-secret.yaml
 
 #### Deploy to Kubernetes
-```
+
 Deploy postgres
+
 ```
 ./deploy.sh postgres
 ```
