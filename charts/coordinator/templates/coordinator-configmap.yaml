@@ -1,0 +1,74 @@
+apiVersion: "v1"
+kind: ConfigMap
+metadata:
+  name: {{ include "coordinator.fullname" . }}-configmap
+  labels:
+    {{- include "coordinator.labels" . | nindent 4 }}    
+data:
+
+  log.properties: |
+    io.trino=INFO
+
+  config.properties: |
+    #single node install config
+    coordinator=true
+    node-scheduler.include-coordinator=true
+    discovery-server.enabled=true
+    discovery.uri=http://coordinator-0:8080
+
+    web-ui.enabled=true
+
+    http-server.http.enabled=true
+    http-server.http.port=8080
+
+    http-server.https.enabled=true
+    http-server.https.port=8443
+    http-server.https.keystore.path=/opt/trino/certs/keystore.jks
+    http-server.https.keystore.key=password
+
+    http-server.authentication.type=password
+    http-server.auth.users-file=/opt/trino/security/passwords/password.db
+    #http-server.authentication.allow-insecure-over-http=true
+
+    internal-communication.shared-secret=vtudcHKq/rf6KUiJ4N3aQiMW5nc6/Tve3t1R/yTbVPVXDVZVkWZIoMk3mg3IDyTk6sj+K9H5nLR38AhfwK1W/7me6UnrexM8s9KAoylSPL0zCXNiVgONrKriG9Q9qkVX6cWNXU/Yux8RJM5+7ZQYINJYajZKJwFv7yTOW3WUo305m7Y1E5y/OJ2aHMd8EqAYdHPO8MvrR+rc5cb7urn2Q8bCLEuTm8W/6f6qmb75u+FNtZGqIL1Ro/yV3sSdyYmka47OnwZ+XVxYV+O3M/6sT5plzHKgd3pXt0CdBQGMiFfxWDRJ6CCClJ8JK60FKUctb3w9rhS8wCF0Md8PM05qyFuR0rTl3TS+4/6rn0REWJYXINXMyywUq/TkIFU4EoNaKVFS4uW2utmc1xV/K4PJDG7kJojyXDyRsGI4saraflZGsPnqg3kO3jjFJI/nZxtEt7dNhWFxiqCEStkfv5+TmajvMgFhn4ZoeeNjTh1yyEKexNYRL/nqFHBHSzFjt+Ab5/j5PHAaBW4/HXPbpFfv1JjgKjQit7R7d7QbgDOKepGTemw7hPZcwwHvfqAT5rMmDGZwrQmBjXrJZ12GDEmuBsqjlCaAQbjMtBHbbS81KYmrIZlyXPNCP9S3lWOkNmwLgtY8sVs3TOpP0Ze/MRqtLvaePAwtEhLeUgLIBGHBCKQ=
+    internal-communication.https.required=false
+    internal-communication.https.keystore.path=/opt/trino/certs/keystore.jks
+    internal-communication.https.keystore.key=password
+
+
+    query.max-memory=1GB
+    query.max-memory-per-node=512MB
+    query.max-total-memory-per-node=512MB
+
+
+  access-control.properties: |
+    access-control.name=file
+    security.config-file=/opt/trino/security/rules/rules.json
+    security.refresh-period=30s
+
+  jvm.config: |
+    -server
+    -Xmx820M
+    -XX:-UseBiasedLocking
+    -XX:+UseG1GC
+    -XX:G1HeapRegionSize=32M
+    -XX:+ExplicitGCInvokesConcurrent
+    -XX:+HeapDumpOnOutOfMemoryError
+    -XX:+UseGCOverheadLimit
+    -XX:+ExitOnOutOfMemoryError
+    -XX:ReservedCodeCacheSize=256M
+    -XX:PerMethodRecompilationCutoff=10000
+    -XX:PerBytecodeRecompilationCutoff=10000
+    -Djdk.attach.allowAttachSelf=true
+    -Djdk.nio.maxCachedBufferSize=2000000
+
+
+  node.properties: |
+    node.environment=development
+    node.data-dir=/data/trino
+    node.id=89505ebc-1b33-4f96-adfc-235d6af158b0
+
+  password-authenticator.properties: |
+    password-authenticator.name=file
+    file.password-file=/opt/trino/security/passwords/password.db
+
