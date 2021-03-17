@@ -1,0 +1,4 @@
+Execute the following to login to presto cli console
+
+kubectl exec -it $(kubectl get pods --no-headers -l "app.kubernetes.io/name={{ include "trino-client.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}") -- sh /opt/trino/client/client.sh
+
