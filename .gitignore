@@ -4,5 +4,6 @@ trino
 hive/data
 hive-site.xml
 .tmp
+local.yaml
 
 

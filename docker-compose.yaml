@@ -41,7 +41,7 @@ services:
         - ./hive/output:/opt/data/output
       ports:
         - "10000:10000"
-        - "8093:8093"
+        - "9083:9083"
       networks:
         ntrino:
           aliases:
