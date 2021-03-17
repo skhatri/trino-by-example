@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "hive.fullname" . }}
+  labels:
+    {{- include "hive.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "hive.fullname" . }}
+{{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+{{- end }}
+  selector:
+    matchLabels:
+      {{- include "hive.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+    {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      labels:
+        {{- include "hive.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "hive.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: thriftport
+              containerPort: {{ .Values.service.thriftport }}
+            - name: hiveport
+              containerPort: {{ .Values.service.hiveport }}
+          # livenessProbe:
+          #   httpGet:
+          #     path: /
+          #     port: http
+          # readinessProbe:
+          #   httpGet:
+          #     path: /
+          #     port: http
+
+          env:
+          - name: APP_NAME
+            value: hive
+{{- if .Values.secret.s3.enabled }}
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+             secretKeyRef: 
+              name: {{ include "hive.fullname" . }}-s3-secret
+              key: AWS_ACCESS_KEY_ID
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "hive.fullname" . }}-s3-secret
+                key: AWS_SECRET_ACCESS_KEY
+{{- end }}
+
+          volumeMounts:
+          - mountPath: /opt/app/init.scripts
+            name: init-scripts-mount
+
+          - mountPath: /opt/app/conf-data
+            name: configmap-mount
+          
+          - mountPath: /opt/app/apache-hive-3.1.2-bin/conf
+            name: hive-conf-dir
+                      
+          - mountPath: /tmp
+            name: hive-tmp-dir
+          
+          - mountPath: /opt/app/warehouse
+            name: hive-warehouse-dir
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+
+      - name: configmap-mount
+        configMap:
+          name: {{ include "hive.fullname" . }}-configmap
+      - name: init-scripts-mount
+        configMap:
+          name: {{ include "hive.fullname" . }}-init-scripts-configmap
+          defaultMode: 0755
+      - name: hive-conf-dir
+        emptyDir: {}    
+      - name: hive-tmp-dir
+        emptyDir: {}
+      - name: hive-warehouse-dir
+        emptyDir: {}
+
+        
