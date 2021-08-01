@@ -1,10 +1,12 @@
 /trino
+#Secrets
 .env
+hive-site.xml
+local.yaml
+
 *tar.gz
 hive/data
-hive-site.xml
 .tmp
-local.yaml
 superset/data
 *.iml
 *.iws
