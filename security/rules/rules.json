@@ -1,85 +1,171 @@
 {
-    "catalogs": [
-      {
-        "user": "admin",
-        "catalog": "(mysql|system)",
-        "allow": "all"
-      },
-      {
-        "group": "finance|human_resources",
-        "catalog": "postgres",
-        "allow": true
-      },
-      {
-        "catalog": "(memory|tpch|tpcds|hive|jmx)",
-        "allow": "all"
-      },
-      {
-        "user": "alice",
-        "catalog": "postgresql",
-        "allow": "read-only"
-      },
-      {
-        "catalog": "system",
-        "allow": "none"
-      }
-    ],
-
-    "schemas": [
-        {
-          "user": "admin",
-          "schema": ".*",
-          "owner": true
-        },
-        {
-          "user": "guest",
-          "owner": false
-        },
-        {
-          "catalog": "default",
-          "schema": "default",
-          "owner": true
-        }
+  "catalogs": [
+    {
+      "user": "(admin|dev)",
+      "catalog": "(mysql|system|hive|memory|tpch|tpcds|jmx)",
+      "allow": "all"
+    },
+    {
+      "catalog": "(mysql|system|hive|memory|tpch|tpcds|jmx)",
+      "allow": "all"
+    },
+    {
+      "group": "finance",
+      "catalog": "finance",
+      "allow": true
+    },
+    {
+      "user": "user1",
+      "catalog": "hive",
+      "allow": "read-only"
+    },
+    {
+      "catalog": "system",
+      "allow": "none"
+    }
+  ],
+  "schemas": [
+    {
+      "schema": "information_schema",
+      "owner": true
+    },
+    {
+      "user": "(admin|skhatri|dev)",
+      "schema": ".*",
+      "owner": true
+    },
+    {
+      "user": "skhatri",
+      "schema": "(finance|fitness|information_schema)",
+      "owner": true
+    },
+    {
+      "user": "user1",
+      "schema": "finance",
+      "owner": true
+    },
+    {
+      "user": "user2",
+      "schema": "fitness",
+      "owner": true
+    },
+    {
+      "user": "user3",
+      "schema": "finance",
+      "owner": true
+    },
+    {
+      "catalog": "default",
+      "schema": "default",
+      "owner": true
+    }
+  ],
+  "tables": [
+    {
+      "user": "(admin|dev)",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "DELETE",
+        "OWNERSHIP"
+      ]
+    },
+    {
+      "schema": "information_schema",
+      "table": ".*",
+      "privileges": [
+        "SELECT"
+      ]
+    },
+    {
+      "user": "user1",
+      "catalog": "hive",
+      "schema": "finance",
+      "table": ".*",
+      "privileges": [
+        "SELECT"
+      ]
+    },
+    {
+      "user": "user2",
+      "catalog": "hive",
+      "schema": "fitness",
+      "table": ".*",
+      "privileges": [
+        "SELECT"
+      ]
+    },
+    {
+      "user": "user3",
+      "catalog": "hive",
+      "schema": "finance",
+      "table": "activity",
+      "privileges": [
+        "SELECT"
+      ]
+    },
+    {
+      "user": "skhatri",
+      "catalog": "hive",
+      "schema": "(finance|fitness)",
+      "table": ".*",
+      "privileges": [
+        "SELECT"
+      ]
+    },
+    {
+      "user": "banned_user",
+      "privileges": []
+    },
+    {
+      "catalog": "default",
+      "schema": "hr",
+      "table": "employee",
+      "privileges": [
+        "SELECT"
       ],
-
-      "tables": [
+      "filter": "user = current_user",
+      "filter_environment": {
+        "user": "admin"
+      }
+    },
+    {
+      "catalog": "default",
+      "schema": "default",
+      "table": ".*",
+      "privileges": [
+        "SELECT"
+      ],
+      "columns": [
         {
-          "user": "admin",
-          "privileges": ["SELECT", "INSERT", "DELETE", "OWNERSHIP"]
+          "name": "address",
+          "allow": false
         },
         {
-          "user": "banned_user",
-          "privileges": []
-        },
-        {
-          "catalog": "default",
-          "schema": "hr",
-          "table": "employee",
-          "privileges": ["SELECT"],
-          "filter": "user = current_user",
-          "filter_environment": {
+          "name": "SSN",
+          "mask": "'XXX-XX-' + substring(credit_card, -4)",
+          "mask_environment": {
             "user": "admin"
           }
-        },
-        {
-          "catalog": "default",
-          "schema": "default",
-          "table": ".*",
-          "privileges": ["SELECT"],
-          "columns" : [
-             {
-                "name": "address",
-                "allow": false
-             },
-             {
-                "name": "SSN",
-                "mask": "'XXX-XX-' + substring(credit_card, -4)",
-                "mask_environment": {
-                  "user": "admin"
-                }
-             }
-          ]
         }
       ]
-
-  }
+    }
+  ],
+  "impersonation": [
+    {
+      "original_user": "(admin|dev)",
+      "new_user": ".*",
+      "allow": true
+    },
+    {
+      "original_user": "skhatri",
+      "new_user": "admin",
+      "allow": false
+    },
+    {
+      "original_user": "skhatri",
+      "new_user": ".*",
+      "allow": true
+    }
+  ]
+}

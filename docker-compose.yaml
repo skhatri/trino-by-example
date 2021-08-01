@@ -3,6 +3,7 @@ volumes:
     hivedb: {}
     coordinatordb: {}
     workerdb: {}
+    supersetdb: {}
 services:
     postgres:
       image: postgres:9.4
@@ -28,7 +29,7 @@ services:
 
     hive:
       image: skhatri/hive:3.1.2
-      build: hive/
+      #build: hive/
       container_name: hive
       environment:
         - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -51,7 +52,8 @@ services:
           condition: service_healthy
 
     coordinator:
-      image: trinodb/trino:352
+      build: .
+      #image: trinodb/trino:359
       container_name: coordinator
       environment:
         - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
@@ -83,7 +85,7 @@ services:
 
 
     worker-1:
-      image: trinodb/trino:352
+      image: trinodb/trino:359
       container_name: worker-1
       environment:
         - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
@@ -105,13 +107,20 @@ services:
           condition: service_healthy
 
     superset:
-      image: superset-dev:0.2
+      #image: kubesailmaker/superset-dev:latest
+      build: superset
       container_name: superset
-      environment: []
+      environment:
+        - DATA_DIR=/opt/superset/data
       volumes:
       - ./certs:/opt/superset/certs
+      - supersetdb:/opt/superset/data
+      - ./superset/config.py:/app/superset/config.py
+      - ./superset/core.py:/app/superset/models/core.py
+      - ./superset/trino.py:/app/superset/db_engine_specs/trino.py
+      - ./superset/client.py:/usr/local/lib/python3.7/site-packages/trino/client.py
       ports:
-        - "9000:8080"
+        - "9000:8088"
       networks:
         ntrino:
           aliases:
@@ -119,6 +128,28 @@ services:
       depends_on:
         coordinator:
           condition: service_healthy
+        postgres:
+          condition: service_healthy
+
+
+    trino-proxy:
+      image: "envoyproxy/envoy-dev:latest"
+      command: /usr/local/bin/envoy -c /etc/trino-envoy.yaml --service-cluster trino_coordinator -l debug
+      container_name: "trino-proxy"
+      volumes:
+        - ./envoy/trino-envoy.yaml:/etc/trino-envoy.yaml
+        - ./certs/:/opt/certs
+      networks:
+        ntrino:
+          aliases:
+            - trino-proxy
+      expose:
+        - "8453"
+        - "8001"
+      ports:
+        - "8453:8453"
+        - "8001:8001"
+
 
 networks:
   ntrino: {}

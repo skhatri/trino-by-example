@@ -14,7 +14,7 @@ This is a recipe to create a Presto/Trino cluster with hive.
 
 ### Download client
 ```
-curl -O trino https://repo1.maven.org/maven2/io/trino/trino-cli/353/trino-cli-353-executable.jar
+curl -O trino https://repo1.maven.org/maven2/io/trino/trino-cli/359/trino-cli-359-executable.jar
 chmod +x trino
 ```
 
@@ -24,12 +24,21 @@ Generate keystore and truststore
 ```
 keytool -genkeypair -alias trino -keyalg RSA -keystore certs/keystore.jks \
 -dname "CN=coordinator, OU=datalake, O=dataco, L=Sydney, ST=NSW, C=AU" \
--ext san=dns:coordinator,dns:coordinator.presto,dns:coordinator.presto.svc,dns:coordinator.presto.svc.cluster.local,dns:coordinator-headless,dns:coordinator-headless.presto,dns:coordinator-headless.presto.svc,dns:coordinator-headless.presto.svc.cluster.local,dns:localhost,ip:127.0.0.1,ip:192.168.64.5,ip:192.168.64.6 \
+-ext san=dns:coordinator,dns:coordinator.presto,dns:coordinator.presto.svc,dns:coordinator.presto.svc.cluster.local,dns:coordinator-headless,dns:coordinator-headless.presto,dns:coordinator-headless.presto.svc,dns:coordinator-headless.presto.svc.cluster.local,dns:localhost,dns:trino-proxy,ip:127.0.0.1,ip:192.168.64.5,ip:192.168.64.6 \
 -storepass password
 
 keytool -exportcert -file certs/trino.cer -alias trino -keystore certs/keystore.jks -storepass password
 
 keytool -import -v -trustcacerts -alias trino_trust -file certs/trino.cer -keystore certs/truststore.jks -storepass password -keypass password -noprompt
+
+
+keytool -keystore certs/keystore.jks -exportcert -alias trino -storepass password| openssl x509 -inform der -text
+
+keytool -importkeystore -srckeystore certs/keystore.jks -destkeystore certs/trino.p12 -srcstoretype jks -deststoretype pkcs12 -storepass password 
+
+openssl pkcs12 -in certs/trino.p12 -out certs/trino.pem
+
+openssl x509 -in certs/trino.cer -inform DER -out certs/trino.crt
 
 ```
 
@@ -55,7 +64,7 @@ Here issue command like ```show catalogs``` to see all available catalogs for qu
 The same query can be run through rest URI
 
 ```
-curl -k https://coordinator:32538/v1/statement/ \
+curl -k https://coordinator:8443/v1/statement/ \
 --header "Authorization: Basic YWRtaW46cGFzc3dvcmQ=" \
 --header "X-Trino-User: admin" \
 --header "X-Trino-Schema: sf1" \
@@ -66,7 +75,6 @@ curl -k https://coordinator:32538/v1/statement/ \
 --data "select * from nation"
 
 ```
-
 
 ### Create Table in Hive with S3
 I used by google fit app data for this
@@ -80,7 +88,7 @@ Next, login to hive and create the activity table. Register a new partition also
 make hive-cli
 
 #set bucket name as variable
-set hivevar:bucket_name=<BUCKET_NAME>;
+set hivevar:bucket_name=skhatri-dataset;
 CREATE DATABASE fitness;
 use fitness;
 
@@ -254,6 +262,112 @@ select account, txn_date, category, last_updated, txn_id
 from hive.finance.activity_snapshot
 where version=cast('2021-03-05' as date) and account = 'acc5' and txn_date=cast('2021-03-05' as date) and merchant='Apple Store Sydney';
 ```
+
+### Access Control
+
+Create users
+
+```
+htpasswd -C 10 -B -c security/passwords/password.db user1
+htpasswd -C 10 -B security/passwords/password.db user2
+htpasswd -C 10 -B security/passwords/password.db user3
+htpasswd -C 10 -B security/passwords/password.db skhatri
+htpasswd -C 10 -B security/passwords/password.db admin
+```
+
+
+|User|Access|
+|---|---|
+|user1|finance.\*,tpch,information_schema|
+|user2|fitness.activity,tpch,information_schema|
+|user3|finance.activity,tpch,information_schema|
+|skhatri|finance.\*, fitness.\*,tpch,information_schema|
+|admin|*|
+
+refer to security/rules/rules.json for configuration
+
+#### Querying as Users
+
+Setup a database in Superset using the following URL and connect params
+
+```
+trino://admin:password@coordinator:8443/hive
+```
+
+Connect Params like this is for testing only and it is recommended to use cacert once basic connectivity is verified
+```
+{
+    "connect_args": {
+        "verify": false
+    }
+}
+```
+
+c2toYXRyaTpwYXNzd29yZAo=
+
+curl --cacert ./certs/trino.crt \
+--header "Authorization: Basic YWRtaW46cGFzc3dvcmQ=" \
+--header "X-Trino-Source: trino-python-client" \
+--header "X-Trino-Time-Zone: UTC" \
+--header "User-Agent: presto-cli" \
+--header "X-Trino-User: user1" \
+--header "X-Trino-Catalog: hive" \
+--header "X-Trino-Schema: fitness" \
+--data "select * from hive.fitness.activity" \
+https://coordinator:8443/v1/statement/
+
+
+Impersonation configuration for superset queries
+```json 
+,
+  "impersonation": [
+    {
+      "original_user": "(admin|dev)",
+      "new_user": ".*",
+      "allow": true
+    },
+    {
+      "original_user": "skhatri",
+      "new_user": "admin",
+      "allow": false
+    },
+    {
+      "original_user": "skhatri",
+      "new_user": ".*",
+      "allow": true
+    }
+  ]
+  }
+```
+
+curl -k --header "Authorization: Basic YWRtaW46cGFzc3dvcmQ=" \
+https://coordinator:8443/v1/statement/executing/20210725_132727_00074_tbc5s/yfd855b4a5f7abd77513138384d23060005d9402c/0
+
+### Running with Envoy
+
+Create trino-proxy certificate
+```
+./ca.sh trino-proxy
+```
+
+curl --cacert ./certs/trino-proxy/bundle.crt \
+--header "Authorization: Basic $(echo -n admin:password|base64)" \
+--header "X-Trino-Source: trino-python-client" \
+--header "X-Trino-Time-Zone: UTC" \
+--header "User-Agent: presto-cli" \
+--header "X-Trino-User: user2" \
+--header "X-Trino-Catalog: hive" \
+--header "X-Trino-Schema: finance" \
+--header "X-Trino-Session: " \
+--header "X-Request-Id: 8ce0920c-a8c5-4587-949c-b268dfc80030" \
+--data "select * from hive.fitness.activity" \
+https://trino-proxy:8453/v1/statement/
+
+curl --cacert ./certs/trino-proxy/bundle.crt \
+--header "Authorization: Basic $(echo -n admin:password|base64)" \
+--header "X-Trino-User: user2" \
+"https://trino-proxy:8453/v1/statement/executing/20210731_125801_00118_hhque/ydd6edd05eec3597d2c76c03e5943f46d4956aeec/0"
+
 
 
 ### Running in Kubernetes

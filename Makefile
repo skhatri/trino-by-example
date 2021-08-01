@@ -1,4 +1,6 @@
-.PHONY: build
+TARGET=coordinator
+
+.PHONY: build coordinator
 
 
 presto:
@@ -24,3 +26,8 @@ hive-cli:
 
 psql:
 	@docker exec -it postgres psql -U postgres
+
+build:
+	@gradle clean build -q
+	@docker-compose build $(TARGET)
+

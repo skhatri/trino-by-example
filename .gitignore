@@ -1,9 +1,18 @@
-trino
+/trino
 .env
 *tar.gz
 hive/data
 hive-site.xml
 .tmp
 local.yaml
-
+superset/data
+*.iml
+*.iws
+*.ipr
+ca
+build
+out
+lib
+.gradle
+.idea
 
