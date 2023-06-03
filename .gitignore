@@ -17,4 +17,5 @@ out
 lib
 .gradle
 .idea
+bin
 
