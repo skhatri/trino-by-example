@@ -5,7 +5,7 @@ do
     if [[ $a != "" ]];
     then
         echo replacing \${env:$a} with $b
-        sed s/"\${env:$a}"/"$b"/g hive/conf/hive-site.xml > hive/conf/.tmp
+        sed s#"\${env:$a}"#"$b"#g hive/conf/hive-site.xml > hive/conf/.tmp
         cp hive/conf/.tmp hive/conf/hive-site.xml
     fi;
 done < .env

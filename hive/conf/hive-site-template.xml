@@ -26,27 +26,47 @@
   </property>
   <property>
     <name>fs.s3.awsAccessKeyId</name>
-    <value>${env:AWS_ACCESS_KEY}</value>
+    <value>${env:STORE_KEY}</value>
   </property>
   <property>
     <name>fs.s3.awsSecretAccessKey</name>
-    <value>${env:AWS_SECRET_ACCESS_KEY}</value>
+    <value>${env:STORE_SECRET}</value>
   </property>
   <property>
     <name>fs.s3n.awsAccessKeyId</name>
-    <value>${env:AWS_ACCESS_KEY}</value>
+    <value>${env:STORE_KEY}</value>
   </property>
   <property>
     <name>fs.s3n.awsSecretAccessKey</name>
-    <value>${env:AWS_SECRET_ACCESS_KEY}</value>
+    <value>${env:STORE_SECRET}</value>
   </property>
   <property>
     <name>fs.s3a.access.key</name>
-    <value>${env:AWS_ACCESS_KEY}</value>
+    <value>${env:STORE_KEY}</value>
   </property>
   <property>
     <name>fs.s3a.secret.key</name>
-    <value>${env:AWS_SECRET_ACCESS_KEY}</value>
+    <value>${env:STORE_SECRET}</value>
+  </property>
+  <property>
+    <name>fs.s3a.endpoint</name>
+    <value>${env:S3_ENDPOINT}</value>
+  </property>
+  <property>
+    <name>fs.s3a.connection.timeout</name>
+    <value>200000</value>
+  </property>  
+  <property>
+    <name>fs.s3a.connection.establish.timeout</name>
+    <value>10000</value>
+  </property>    
+  <property>
+    <name>fs.s3a.connection.ssl.enabled</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>fs.s3a.path.style.access</name>
+    <value>true</value>
   </property>
   <property>
     <name>hive.exec.plan</name>

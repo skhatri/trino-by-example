@@ -6,18 +6,19 @@ This is a recipe to create a Presto/Trino cluster with hive.
 - Certificates
 - Configure Environment/Secrets
 - Test Trino Connectivity
+- Setup S3 environment
 - Create Table in Hive with S3
 - Queries using Hive
 - Queries using Trino
 - Access Control
 - Querying with Superset
 - Running with Envoy
-- Running in Kubernetes
+
 
 
 ### Download client
 ```shell
-curl -s -o trino https://repo1.maven.org/maven2/io/trino/trino-cli/380/trino-cli-380-executable.jar
+curl -s -o trino https://repo1.maven.org/maven2/io/trino/trino-cli/418/trino-cli-418-executable.jar
 chmod +x trino
 ```
 
@@ -95,13 +96,37 @@ curl -k https://coordinator:8443/v1/statement/ \
 
 ```
 
+### Setup S3 environment
+create a s3 bucket for this project and upload test data to s3 bucket
 
-### Create Table in Hive with S3
+
+replace endpoint-url if not running minio at all.
+```
+while read line; do export $line; done < .env;
+AWS_ACCESS_KEY_ID=${STORE_KEY} AWS_SECRET_ACCESS_KEY=${STORE_SECRET} \
+aws s3 --endpoint-url http://localhost:9005 mb s3://my-trino-dataset
+```
 I used by google fit app data for this
 
-BUCKET_NAME=your-bucket-name
+```
+AWS_ACCESS_KEY_ID=${STORE_KEY} AWS_SECRET_ACCESS_KEY=${STORE_SECRET} \
+aws s3 --endpoint-url http://localhost:9005 cp hive/sampledata.csv s3://my-trino-dataset/data/fit/load_date=2021-03-06/
+```
 
-aws s3 cp hive/sampledata.csv s3://${BUCKET_NAME}/data/fit/load_date=2021-03-06/
+also upload sample finance data to another slice in the same bucket
+
+```
+AWS_ACCESS_KEY_ID=${STORE_KEY} AWS_SECRET_ACCESS_KEY=${STORE_SECRET} \
+aws s3 --endpoint-url http://localhost:9005 cp --recursive hive/output s3://my-trino-dataset/data/finance/output
+```
+
+Let's list the data in object storage to verify that the upload is successful
+```
+AWS_ACCESS_KEY_ID=${STORE_KEY} AWS_SECRET_ACCESS_KEY=${STORE_SECRET} \
+aws s3 --endpoint-url http://localhost:9005 ls s3://my-trino-dataset/data --recursive
+```
+
+### Create Table in Hive with S3
 
 Next, login to hive and create the activity table. Register a new partition also
 
@@ -112,7 +137,7 @@ make hive-cli
 #set bucket name as variable
 
 ```hiveql
-set hivevar:bucket_name=<your-bucket-name>;
+set hivevar:bucket_name=my-trino-dataset;
 CREATE DATABASE fitness;
 use fitness;
 
@@ -169,7 +194,7 @@ CREATE EXTERNAL TABLE finance.activity(
 ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
 STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.SymlinkTextInputFormat'
 OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
-LOCATION '/opt/data/output/activity/_symlink_format_manifest/';
+LOCATION 's3a://${hivevar:bucket_name}/data/finance/output/activity/_symlink_format_manifest/';
 
 MSCK REPAIR TABLE finance.activity;
 
@@ -188,7 +213,7 @@ CREATE EXTERNAL TABLE finance.activity_snapshot(
 ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
 STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.SymlinkTextInputFormat'
 OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
-LOCATION '/opt/data/output/activity/_delta_manifest/';
+LOCATION 's3a://${hivevar:bucket_name}/data/finance/output/activity/_delta_manifest/';
 
 MSCK REPAIR TABLE finance.activity_snapshot;
 
@@ -673,63 +698,5 @@ do
     fi;
     sleep 1;
 done;
-```
-
-
-### Running in Kubernetes
-check manifests at kubernetes/manifests/coordinator and kubernetes/manifests/worker to apply them.
-
-#### updating certificates
-```
-base64 certs/keystore.jks|pbcopy
-base64 certs/truststore.jks|pbcopy
-base64 certs/trino.cer|pbcopy
-```
-Paste the base64 text in coordinator-cert-secret.yaml and worker-cert-secret.yaml
-
-#### update password
-```
-base64 security/passwords/password.db|pbcopy
-base64 security/rules/rules.json|pbcopy
-```
-Paste the base64 text in coordinator-password-secret.yaml and coordinator-rule-secret.yaml files respectively.
-
-#### Deploy to Kubernetes
-
-Deploy postgres
-
-```
-cd charts
-./deploy.sh postgres
-```
-
-Initialise it once to create hive database
-
-```
-kubectl exec -it postgres-0 -- psql -U postgres
-# create database hive;
-# \q
-```
-
-Deploy other apps
-```
-./deploy.sh hive
-./deploy.sh coordinator
-./deploy.sh worker
-
-./deploy.sh superset
-
-./deploy.sh trino-client
-./deploy.sh trino-proxy
-#store data
-./deploy.sh minio
-
-```
-
-
-Scale Down if there are resource issues
-```
-helm del trino-client
-kubectl scale sts worker --replicas=1
 ```
 
