@@ -2,11 +2,13 @@
 This is a recipe to create a Presto/Trino cluster with hive.
 
 ## Index
+- Build Images
 - Download Client
 - Certificates
 - Configure Environment/Secrets
 - Test Trino Connectivity
 - Setup S3 environment
+- S3 Credentials
 - Create Table in Hive with S3
 - Queries using Hive
 - Queries using Trino
@@ -14,7 +16,12 @@ This is a recipe to create a Presto/Trino cluster with hive.
 - Querying with Superset
 - Running with Envoy
 
+### Build Images
+If you do want to build your own images, update docker-compose.yaml to enable image: for hive and trino
 
+```make build``` will build trino image and ```make build-hive``` will build a hive image from scratch.
+Note hive/Dockerfile relies on hive and hadoop binary to be available locally to save bandwidth for local builds.
+So you will have to download it once and reuse it.
 
 ### Download client
 ```shell
@@ -125,6 +132,23 @@ Let's list the data in object storage to verify that the upload is successful
 AWS_ACCESS_KEY_ID=${STORE_KEY} AWS_SECRET_ACCESS_KEY=${STORE_SECRET} \
 aws s3 --endpoint-url http://localhost:9005 ls s3://my-trino-dataset/data --recursive
 ```
+
+### S3 Credentials
+In order to provide maximum flexibility and avoid secret sprawl, we are implementing a custom credential provider
+and reusing it for both Hive and Trino usage. This ensures our hive-site.xml and trino hive properties do not need to have sensitive information.
+
+To avoid conflicts with environment variables and the default behaviour, we are using the following four environment variables to determine what our 
+secret strategy is going to be. We could also provide these as XML string property in hive resource xml file.
+
+```
+        String accessKey = System.getenv("STORE_KEY");
+        String secretKey = System.getenv("STORE_SECRET");
+        String identityFile = System.getenv("STORE_TOKEN_FILE");
+        String roleArn = System.getenv("STORE_ROLE_ARN");
+```
+
+Refer to [CredentialsFactory.java](./hive-authz/src/main/java/com/github/skhatri/s3/CredentialsFactory.java) in hive-authz project to view/change the credentials derivation strategy.
+
 
 ### Create Table in Hive with S3
 
@@ -257,6 +281,7 @@ group by year(activity_date), month(activity_date);
 ### Query Delta Data with Trino
 
 View https://github.com/skhatri/spark-delta-by-example for relevant spark delta code
+There is pre delta 2.0 code and higher versions may have different API now.
 
 #### Show available snapshots
 

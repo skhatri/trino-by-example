@@ -31,3 +31,6 @@ build:
 	@gradle clean build -q
 	@docker-compose build $(TARGET)
 
+build-hive:
+	@gradle clean build -q
+	@docker-compose build hive

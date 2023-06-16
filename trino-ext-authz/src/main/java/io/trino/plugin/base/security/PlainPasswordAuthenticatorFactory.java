@@ -1,5 +1,6 @@
 package io.trino.plugin.base.security;
 
+import io.trino.spi.security.AccessDeniedException;
 import io.trino.spi.security.BasicPrincipal;
 import io.trino.spi.security.PasswordAuthenticator;
 import io.trino.spi.security.PasswordAuthenticatorFactory;
@@ -23,7 +24,9 @@ public class PlainPasswordAuthenticatorFactory implements PasswordAuthenticatorF
 class PlainPasswordAuthenticator implements PasswordAuthenticator {
     @Override
     public Principal createAuthenticatedPrincipal(String user, String password) {
-        System.out.println(user + " " + password);
+        if ("admin".equals(user) && "admin".equals(password)) {
+            throw new AccessDeniedException("demo only: admin password can't be admin");
+        }
         return new BasicPrincipal(user);
     }
 }

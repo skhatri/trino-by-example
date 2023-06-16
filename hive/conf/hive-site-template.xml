@@ -20,33 +20,14 @@
   <!-- WARNING!!! You must make your changes in hive-site.xml instead.         -->
   <!-- Hive Execution Parameters -->
   <property>
+    <name>fs.s3a.aws.credentials.provider</name>
+    <value>com.github.skhatri.s3.AwsCustomCredentialsProvider</value>
+  </property>
+
+  <property>
     <name>hive.exec.script.wrapper</name>
     <value/>
     <description/>
-  </property>
-  <property>
-    <name>fs.s3.awsAccessKeyId</name>
-    <value>${env:STORE_KEY}</value>
-  </property>
-  <property>
-    <name>fs.s3.awsSecretAccessKey</name>
-    <value>${env:STORE_SECRET}</value>
-  </property>
-  <property>
-    <name>fs.s3n.awsAccessKeyId</name>
-    <value>${env:STORE_KEY}</value>
-  </property>
-  <property>
-    <name>fs.s3n.awsSecretAccessKey</name>
-    <value>${env:STORE_SECRET}</value>
-  </property>
-  <property>
-    <name>fs.s3a.access.key</name>
-    <value>${env:STORE_KEY}</value>
-  </property>
-  <property>
-    <name>fs.s3a.secret.key</name>
-    <value>${env:STORE_SECRET}</value>
   </property>
   <property>
     <name>fs.s3a.endpoint</name>
