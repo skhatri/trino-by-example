@@ -161,6 +161,7 @@ services:
       image: ${REPO}minio/minio:RELEASE.2022-03-03T21-21-16Z
       #command: "server /data --console-address :9001"
       #s3 backend can be set to "gateway s3" or "server /data"
+      #if this command fails, replace S3_BACKEND with one of the desired values
       command: "${S3_BACKEND} --address :9000 --console-address :9001"
       container_name: "minio"
       environment:
