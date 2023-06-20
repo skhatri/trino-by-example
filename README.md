@@ -109,7 +109,7 @@ create a s3 bucket for this project and upload test data to s3 bucket
 
 replace endpoint-url if not running minio at all.
 ```
-while read line; do export $line; done < .env;
+while read line; do if [[ ! "$line" =~ ^# ]]; then export $line; fi; done < .env;
 AWS_ACCESS_KEY_ID=${STORE_KEY} AWS_SECRET_ACCESS_KEY=${STORE_SECRET} \
 aws s3 --endpoint-url http://localhost:9005 mb s3://my-trino-dataset
 ```

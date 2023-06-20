@@ -6,7 +6,7 @@ volumes:
     supersetdb: {}
 services:
     postgres:
-      image: postgres:9.4
+      image: ${REPO}postgres:9.4
       container_name: postgres
       environment:
           - POSTGRES_USER=postgres
@@ -29,7 +29,7 @@ services:
 
     hive:
       #use this if you do not want to build your own
-      #image: cloudnativek8s/apache-hive:3.1.2-v1.0.5
+      #image: ${REPO}cloudnativek8s/apache-hive:3.1.2-v1.0.5
       #building your own - download apache-hive and hadoop into hive folder. check Dockerfile
       build: 
         context: .
@@ -57,7 +57,7 @@ services:
 
     coordinator:
       build: .
-      #image: cloudnativek8s/trino:418
+      #image: ${REPO}cloudnativek8s/trino:418
       container_name: coordinator
       environment:
         - STORE_KEY=${STORE_KEY}
@@ -90,7 +90,7 @@ services:
 
 
     worker-1:
-      #image: cloudnativek8s/trino:418
+      #image: ${REPO}cloudnativek8s/trino:418
       build: .
       container_name: worker-1
       environment:
@@ -116,7 +116,7 @@ services:
     superset:
       #if issues building it, use the image below
       build: superset
-      #image: cloudnativek8s/superset:latest-dev
+      #image: ${REPO}cloudnativek8s/superset:latest-dev
       container_name: superset
       environment:
         - DATA_DIR=/opt/superset/data
@@ -139,7 +139,7 @@ services:
 
 
     trino-proxy:
-      image: "envoyproxy/envoy-dev:latest"
+      image: "${REPO}envoyproxy/envoy-dev:latest"
       command: /usr/local/bin/envoy -c /etc/trino-envoy.yaml --service-cluster trino_coordinator -l debug
       container_name: "trino-proxy"
       volumes:
@@ -158,7 +158,7 @@ services:
 
     #AWS_ACCESS_KEY_ID=minio AWS_SECRET_ACCESS_KEY=minio123 aws s3 --endpoint-url http://localhost:9005 ls s3://
     minio: 
-      image: minio/minio:RELEASE.2022-03-03T21-21-16Z
+      image: ${REPO}minio/minio:RELEASE.2022-03-03T21-21-16Z
       #command: "server /data --console-address :9001"
       #s3 backend can be set to "gateway s3" or "server /data"
       command: "${S3_BACKEND} --address :9000 --console-address :9001"
@@ -184,4 +184,3 @@ services:
 networks:
   ntrino: {}
 
-      
