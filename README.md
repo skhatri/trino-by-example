@@ -25,7 +25,7 @@ So you will have to download it once and reuse it.
 
 ### Download client
 ```shell
-curl -s -o trino https://repo1.maven.org/maven2/io/trino/trino-cli/418/trino-cli-418-executable.jar
+curl -s -o trino https://repo1.maven.org/maven2/io/trino/trino-cli/447/trino-cli-447-executable.jar
 chmod +x trino
 ```
 

@@ -1,4 +1,4 @@
-FROM trinodb/trino:418
+FROM trinodb/trino:447
 
 
 RUN mkdir -p /usr/lib/trino/plugin/ext

@@ -19,15 +19,20 @@ class CredentialsFactory {
         String roleArn = System.getenv("STORE_ROLE_ARN");
 
         AWSCredentials credentials = null;
-        if (roleArn != null) {
-            LOGGER.info("using role ARN to create S3 credentials");
-            credentials = WebIdentityTokenCredentialsProvider.builder().roleArn(roleArn).build().getCredentials();
-        } else if (identityFile != null) {
-            LOGGER.info("using identity file {} to create S3 credentials", identityFile);
-            credentials = WebIdentityTokenCredentialsProvider.builder().webIdentityTokenFile(identityFile).build().getCredentials();
-        } else {
+        if(accessKey != null && secretKey != null) {
             LOGGER.info("using basic AWS credentials {}**\n", accessKey.substring(0, accessKey.length() > 5 ? 5 : accessKey.length()));
             credentials = new BasicAWSCredentials(accessKey, secretKey);
+        } else {
+            WebIdentityTokenCredentialsProvider.Builder builder = WebIdentityTokenCredentialsProvider.builder();
+            if (roleArn != null) {
+                LOGGER.info("adding ROLE ARN {}", roleArn);
+                builder = builder.roleArn(roleArn);
+            }
+            if (identityFile != null) {
+                LOGGER.info("adding identity file {} to create S3 credentials", identityFile);
+                builder = builder.webIdentityTokenFile(identityFile);
+            }
+            credentials = builder.build().getCredentials();
         }
         return credentials;
     }
