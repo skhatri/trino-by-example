@@ -727,6 +727,9 @@ Optionally, create trino-proxy certificate which can be configured for trino-pro
 Install jq if you do not have it ```brew install jq```
 
 The below script uses trino-proxy to queue up the query and retrieves data by polling the response.
+
+A file ```bash curl-query.sh``` has been created with the below content to make it easier for you to query against trino using curl and nextUri in a loop until data elements show up.
+
 ```shell
 query="select * from hive.fitness.activity limit 1"
 user="user2"
