@@ -759,4 +759,4 @@ done;
 
 ```
 
-Great, we have come to the end of the example. We create a data lake setup with trino, hive, minio, superset and envoy-proxy. Feel free to raise issues or ask questions.
+Great, we have come to the end of the example. We created a data lake setup with trino, hive, minio and then queried it using superset. We also added an envoy proxy layer on top for observability. Obviously it works on my local laptop :), but if for some reason, things do not on yours, please raise an issue or get in touch.
