@@ -1,5 +1,5 @@
 TARGET=coordinator
-
+TRINO_VERSION := $(shell grep trinoVersion gradle.properties | awk -F'=' '{print $$2}' | xargs)
 .PHONY: build coordinator trino
 
 
@@ -28,9 +28,9 @@ psql:
 	@docker exec -it postgres psql -U postgres
 
 build:
-	@gradle clean build -q
-	@docker-compose build $(TARGET)
+	@./gradlew clean build -q
+	@docker-compose build --build-arg TRINO_VERSION=$(TRINO_VERSION) --no-cache $(TARGET)
 
 build-hive:
-	@gradle clean build -q
-	@docker-compose build hive
+	@./gradlew clean build -q
+	@docker-compose build --no-cache hive

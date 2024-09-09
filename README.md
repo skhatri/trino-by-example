@@ -16,16 +16,28 @@ This is a recipe to create a Presto/Trino cluster with hive.
 - Querying with Superset
 - Running with Envoy
 
+### Trino
+Trino is a massively parallel processing engine that can be used to perform query federation in a modern open source data lakehouse setup. 
+We are using the version of trino listed in gradle.properties. It is referenced by the gradle build to create trino authorization and audit plugin jar.
+It is then used by the Makefile to build trino image as well.
+
 ### Build Images
 If you do want to build your own images, update docker-compose.yaml to enable image: for hive and trino
 
-```make build``` will build trino image and ```make build-hive``` will build a hive image from scratch.
+```make build``` will build trino image.
+
+While we have referenced to an already built hive image in docker-compose.yaml, you can build one and use your own image.
+Check hive/Dockerfile2 if you want to simply overlay the hive-authz jar on top of a apache-hive.
+
+```make build-hive``` will build a hive image from scratch.
+
 Note hive/Dockerfile relies on hive and hadoop binary to be available locally to save bandwidth for local builds.
-So you will have to download it once and reuse it.
+So if you download it once, the image build process will be faster as it will try to reuse it.
 
 ### Download client
 ```shell
-curl -s -o trino https://repo1.maven.org/maven2/io/trino/trino-cli/447/trino-cli-447-executable.jar
+TRINO_VERSION=$(grep trinoVersion gradle.properties | awk -F'=' '{print $2}' | xargs)
+curl -s -o trino https://repo1.maven.org/maven2/io/trino/trino-cli/${TRINO_VERSION}/trino-cli-${TRINO_VERSION}-executable.jar
 chmod +x trino
 ```
 
@@ -126,6 +138,14 @@ also upload sample finance data to another slice in the same bucket
 AWS_ACCESS_KEY_ID=${STORE_KEY} AWS_SECRET_ACCESS_KEY=${STORE_SECRET} \
 aws s3 --endpoint-url http://localhost:9005 cp --recursive hive/output s3://my-trino-dataset/data/finance/output
 ```
+
+You should see something like this when you visit http://localhost:9001/
+By default, you can provide minio/minio123 as credentials when accessing minio. 
+
+![minio](./docs/minio-ui.png)
+Study .env.template file or .env to check whether you are using minio
+in data or gateway mode.
+
 
 Let's list the data in object storage to verify that the upload is successful
 ```
@@ -381,23 +401,22 @@ It was initially labelled as Hardware and later it got changed to Phone.
 Let's create few users whose access will be configured in trino rules file.
 
 ```
-htpasswd -C 10 -B -c security/passwords/password.db user1
-htpasswd -C 10 -B security/passwords/password.db user2
-htpasswd -C 10 -B security/passwords/password.db user3
-htpasswd -C 10 -B security/passwords/password.db skhatri
-htpasswd -C 10 -B security/passwords/password.db admin
+htpasswd -C 10 -B -b -c security/passwords/password.db user1 password
+htpasswd -C 10 -B -b security/passwords/password.db user2 password
+htpasswd -C 10 -B -b security/passwords/password.db user3 password
+htpasswd -C 10 -B -b security/passwords/password.db skhatri password
+htpasswd -C 10 -B -b security/passwords/password.db admin password
 ```
 
 Refer to security/rules/rules.json for configuration, the following table summaries the ACL by user.
 
-
-|User|Access|
-|---|---|
-|user1|finance.\*,tpch,information_schema|
-|user2|fitness.activity,tpch,information_schema|
-|user3|finance.activity,tpch,information_schema|
-|skhatri|finance.\*, fitness.\*,tpch,information_schema|
-|admin|*|
+| User    | Access                                         |
+|---------|------------------------------------------------|
+| user1   | finance.\*,tpch,information_schema             |
+| user2   | fitness.activity,tpch,information_schema       |
+| user3   | finance.activity,tpch,information_schema       |
+| skhatri | finance.\*, fitness.\*,tpch,information_schema |
+| admin   | *                                              |
 
 Restart coordinator and worker-1 instances:
 
@@ -484,17 +503,17 @@ A new yaml DSL can be maintained to keep rules simpler.
 Setup a database in Superset using the following URL and connect params
 
 
-Loging to http://localhost:9000/ with admin/admin
+Login to http://localhost:9000/ with admin/admin
 
 Go to the screen to add a new database http://localhost:9000/databaseview/add and configure the following:
 
-|Field|Value|
-|---|---|
-|Database|trino|
-|SQLAlchemy URI|trino://admin:password@coordinator:8443/hive|
-|Impersonate the logged on user|enable it|
-|Secure Extra|{"connect_args": {"verify": false}}|
-|Security| Paste content of ca.crt and trino.crt|
+|Field| Value                                        |
+|---|----------------------------------------------|
+|Database| trino                                        |
+|SQLAlchemy URI| trino://admin:password@coordinator:8443/hive |
+|Impersonate the logged on user| enable it                                    |
+|Secure Extra| {"connect_args": {"verify": false}}          |
+|Security| Paste content of ca.crt and trino.crt ```cat certs/ca.crt certs/trino.crt|pbcopy```       |
 
 Click Test Connection to verify the configuration is ok. Once configured, open http://localhost:9000/superset/sqllab
 and execute 
@@ -505,7 +524,9 @@ from hive.finance.activity
 limit 2
 ```
 The query should return some data.
+![superset query](./docs/superset-query.png)
 
+You can grant sql_lab role to other users using the link in superset ```http://localhost:9000/users/list/```
 Log out and try to login as user1 with password "password". Select data from hive.finance.activity.
 
 ```sql 
@@ -521,7 +542,7 @@ Let's try query that user1 does not have access to run.
 ```sql 
 select * 
 from tpch.sf1.nation
-limit 2
+limit 2;
 ```
 
 The following error should be displayed when running the above query as user1.
@@ -530,6 +551,7 @@ The following error should be displayed when running the above query as user1.
 Unexpected Error
 base error: Access Denied: Cannot select from table tpch.sf1.nation
 ```
+![trino error](./docs/trino-superset-access.png)
 
 
 Impersonation configuration for superset queries is also present in security/rules/rules.json
@@ -579,6 +601,8 @@ The query runs asynchronously and result is to be collected by the client by cal
 {"id":"20220507_202039_00316_z589m","infoUri":"https://coordinator:8443/ui/query.html?20220507_202039_00316_z589m","nextUri":"https://coordinator:8443/v1/statement/queued/20220507_202039_00316_z589m/y66e5ba5e33aa4a2d883eb1de5b1b34a70d49fa5b/1","stats":{"state":"QUEUED","queued":true,"scheduled":false,"nodes":0,"totalSplits":0,"queuedSplits":0,"runningSplits":0,"completedSplits":0,"cpuTimeMillis":0,"wallTimeMillis":0,"queuedTimeMillis":0,"elapsedTimeMillis":0,"processedRows":0,"processedBytes":0,"physicalInputBytes":0,"peakMemoryBytes":0,"spilledBytes":0},"warnings":[]}
 ```
 
+The below query is only for demonstration purpose and will fail. You will need to copy nextUri from output of the previous command. 
+
 ```shell
 
 curl --cacert ./certs/trino.crt \
@@ -596,7 +620,7 @@ https://coordinator:8443/v1/statement/queued/20220507_202039_00316_z589m/y66e5ba
 {"id":"20220507_202039_00316_z589m","infoUri":"https://coordinator:8443/ui/query.html?20220507_202039_00316_z589m","nextUri":"https://coordinator:8443/v1/statement/queued/20220507_202039_00316_z589m/y2a208f52803793fff6721c73899be69224a8361b/2","stats":{"state":"QUEUED","queued":true,"scheduled":false,"nodes":0,"totalSplits":0,"queuedSplits":0,"runningSplits":0,"completedSplits":0,"cpuTimeMillis":0,"wallTimeMillis":0,"queuedTimeMillis":3,"elapsedTimeMillis":5,"processedRows":0,"processedBytes":0,"physicalInputBytes":0,"peakMemoryBytes":0,"spilledBytes":0},"warnings":[]}
 ```
 
-We will keep on calling nextUri 
+We will keep on calling nextUri
 
 ```shell 
 curl --cacert ./certs/trino.crt \
@@ -700,14 +724,15 @@ Optionally, create trino-proxy certificate which can be configured for trino-pro
 ./ca.sh trino-proxy
 ```
 
+Install jq if you do not have it ```brew install jq```
+
 The below script uses trino-proxy to queue up the query and retrieves data by polling the response.
 ```shell
 query="select * from hive.fitness.activity limit 1"
 user="user2"
-next_uri=$(curl -s -o out.json -k --cacert ./certs/trino-proxy/bundle.crt \
+next_uri=$(curl -s -k --cacert ./certs/trino-proxy/bundle.crt \
 --header "Authorization: Basic $(echo -n admin:password|base64)" \
---header "X-Trino-User: ${user}" \
---data "${query}" \
+--header "X-Trino-User: ${user}" --data "${query}" \
 https://trino-proxy:8453/v1/statement/|jq -r '.nextUri')
 while true;
 do
@@ -716,6 +741,14 @@ do
     --header "X-Trino-User: ${user}" \
     ${next_uri}
     cat out.json
+    data_val=$(cat out.json|jq -r '.data')
+    if [[ "${data_val}" != "null" ]];
+    then
+      echo "-----DATA------"
+      echo ${data_val}
+      echo "---------------"
+      break;
+    fi;
     next_uri=$(cat out.json|jq -r '.nextUri')
     if [[ "${next_uri}" == "null" ]];
     then
@@ -723,5 +756,7 @@ do
     fi;
     sleep 1;
 done;
+
 ```
 
+Great, we have come to the end of the example. We create a data lake setup with trino, hive, minio, superset and envoy-proxy. Feel free to raise issues or ask questions.

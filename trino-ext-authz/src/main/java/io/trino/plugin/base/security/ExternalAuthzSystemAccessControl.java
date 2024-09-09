@@ -4,15 +4,15 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.inject.Injector;
 import io.airlift.bootstrap.Bootstrap;
+import io.airlift.bootstrap.LifeCycleManager;
 import io.airlift.log.Logger;
 import io.airlift.units.Duration;
+import io.trino.spi.QueryId;
 import io.trino.spi.TrinoException;
-import io.trino.spi.connector.CatalogSchemaName;
-import io.trino.spi.connector.CatalogSchemaRoutineName;
-import io.trino.spi.connector.CatalogSchemaTableName;
-import io.trino.spi.connector.SchemaTableName;
+import io.trino.spi.connector.*;
 import io.trino.spi.eventlistener.EventListener;
 import io.trino.spi.function.FunctionKind;
+import io.trino.spi.function.SchemaFunctionName;
 import io.trino.spi.security.Identity;
 import io.trino.spi.security.Privilege;
 import io.trino.spi.security.SystemAccessControl;
@@ -24,10 +24,7 @@ import io.trino.spi.type.Type;
 
 import java.nio.file.Paths;
 import java.security.Principal;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -53,46 +50,56 @@ import static java.util.Locale.ENGLISH;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
-public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessControl {
+public class ExternalAuthzSystemAccessControl implements SystemAccessControl {
     private static final Logger LOG = Logger.get(ExternalAuthzSystemAccessControl.class);
     public static final String NAME = "extauthz";
     private static final String INFORMATION_SCHEMA_NAME = "information_schema";
 
+
+    private final LifeCycleManager lifeCycleManager;
     private final List<CatalogAccessControlRule> catalogRules;
     private final Optional<List<QueryAccessRule>> queryAccessRules;
     private final Optional<List<ImpersonationRule>> impersonationRules;
     private final Optional<List<PrincipalUserMatchRule>> principalUserMatchRules;
     private final Optional<List<SystemInformationRule>> systemInformationRules;
+    private final List<AuthorizationRule> authorizationRules;
     private final List<CatalogSchemaAccessControlRule> schemaRules;
     private final List<CatalogTableAccessControlRule> tableRules;
     private final List<SessionPropertyAccessControlRule> sessionPropertyRules;
     private final List<CatalogSessionPropertyAccessControlRule> catalogSessionPropertyRules;
     private final List<CatalogFunctionAccessControlRule> functionRules;
+    private final List<CatalogProcedureAccessControlRule> procedureRules;
     private final Set<AnyCatalogPermissionsRule> anyCatalogPermissionsRules;
     private final Set<AnyCatalogSchemaPermissionsRule> anyCatalogSchemaPermissionsRules;
 
     private ExternalAuthzSystemAccessControl(
+            LifeCycleManager lifeCycleManager,
             List<CatalogAccessControlRule> catalogRules,
             Optional<List<QueryAccessRule>> queryAccessRules,
             Optional<List<ImpersonationRule>> impersonationRules,
             Optional<List<PrincipalUserMatchRule>> principalUserMatchRules,
             Optional<List<SystemInformationRule>> systemInformationRules,
+            List<AuthorizationRule> authorizationRules,
             List<CatalogSchemaAccessControlRule> schemaRules,
             List<CatalogTableAccessControlRule> tableRules,
             List<SessionPropertyAccessControlRule> sessionPropertyRules,
             List<CatalogSessionPropertyAccessControlRule> catalogSessionPropertyRules,
-            List<CatalogFunctionAccessControlRule> functionRules)
+            List<CatalogFunctionAccessControlRule> functionRules,
+            List<CatalogProcedureAccessControlRule> procedureRules)
     {
+        this.lifeCycleManager = requireNonNull(lifeCycleManager, "lifeCycleManager is null");
         this.catalogRules = catalogRules;
         this.queryAccessRules = queryAccessRules;
         this.impersonationRules = impersonationRules;
         this.principalUserMatchRules = principalUserMatchRules;
         this.systemInformationRules = systemInformationRules;
+        this.authorizationRules = authorizationRules;
         this.schemaRules = schemaRules;
         this.tableRules = tableRules;
         this.sessionPropertyRules = sessionPropertyRules;
         this.catalogSessionPropertyRules = catalogSessionPropertyRules;
         this.functionRules = functionRules;
+        this.procedureRules = procedureRules;
 
         ImmutableSet.Builder<AnyCatalogPermissionsRule> anyCatalogPermissionsRules = ImmutableSet.builder();
         schemaRules.stream()
@@ -111,6 +118,10 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
                 .map(CatalogFunctionAccessControlRule::toAnyCatalogPermissionsRule)
                 .flatMap(Optional::stream)
                 .forEach(anyCatalogPermissionsRules::add);
+        procedureRules.stream()
+                .map(CatalogProcedureAccessControlRule::toAnyCatalogPermissionsRule)
+                .flatMap(Optional::stream)
+                .forEach(anyCatalogPermissionsRules::add);
         this.anyCatalogPermissionsRules = anyCatalogPermissionsRules.build();
 
         ImmutableSet.Builder<AnyCatalogSchemaPermissionsRule> anyCatalogSchemaPermissionsRules = ImmutableSet.builder();
@@ -124,6 +135,10 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
                 .forEach(anyCatalogSchemaPermissionsRules::add);
         functionRules.stream()
                 .map(CatalogFunctionAccessControlRule::toAnyCatalogSchemaPermissionsRule)
+                .flatMap(Optional::stream)
+                .forEach(anyCatalogSchemaPermissionsRules::add);
+        procedureRules.stream()
+                .map(CatalogProcedureAccessControlRule::toAnyCatalogSchemaPermissionsRule)
                 .flatMap(Optional::stream)
                 .forEach(anyCatalogSchemaPermissionsRules::add);
         this.anyCatalogSchemaPermissionsRules = anyCatalogSchemaPermissionsRules.build();
@@ -157,9 +172,8 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     }
 
     @Override
-    public void checkCanImpersonateUser(SystemSecurityContext context, String userName)
+    public void checkCanImpersonateUser(Identity identity, String userName)
     {
-        Identity identity = context.getIdentity();
         if (impersonationRules.isEmpty()) {
             // if there are principal user match rules, we assume that impersonation checks are
             // handled there; otherwise, impersonation must be manually configured
@@ -180,7 +194,6 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
         }
 
         denyImpersonateUser(identity.getUser(), userName);
-        LOG.info("impersonation allowed " + context.getIdentity().getUser() + " user " + userName);
     }
 
     @Override
@@ -213,38 +226,43 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     }
 
     @Override
-    public void checkCanExecuteQuery(SystemSecurityContext context)
+    public void checkCanExecuteQuery(Identity identity)
     {
-        if (!canAccessQuery(context.getIdentity(), Optional.empty(), QueryAccessRule.AccessMode.EXECUTE)) {
+        if (!canAccessQuery(identity, Optional.empty(), QueryAccessRule.AccessMode.EXECUTE)) {
+            denyExecuteQuery();
+        }
+    }
+
+    @Override
+    public void checkCanExecuteQuery(Identity identity, QueryId queryId)
+    {
+        checkCanExecuteQuery(identity);
+    }
+
+    @Override
+    public void checkCanViewQueryOwnedBy(Identity identity, Identity queryOwner)
+    {
+        if (!canAccessQuery(identity, Optional.of(queryOwner.getUser()), QueryAccessRule.AccessMode.VIEW)) {
             denyViewQuery();
         }
     }
 
     @Override
-    public void checkCanViewQueryOwnedBy(SystemSecurityContext context, String queryOwner)
-    {
-        if (!canAccessQuery(context.getIdentity(), Optional.of(queryOwner), QueryAccessRule.AccessMode.VIEW)) {
-            denyViewQuery();
-        }
-    }
-
-    @Override
-    public Set<String> filterViewQueryOwnedBy(SystemSecurityContext context, Set<String> queryOwners)
+    public Collection<Identity> filterViewQueryOwnedBy(Identity identity, Collection<Identity> queryOwners)
     {
         if (queryAccessRules.isEmpty()) {
             return queryOwners;
         }
-        Identity identity = context.getIdentity();
         return queryOwners.stream()
-                .filter(owner -> canAccessQuery(identity, Optional.of(owner), QueryAccessRule.AccessMode.VIEW))
+                .filter(owner -> canAccessQuery(identity, Optional.of(owner.getUser()), QueryAccessRule.AccessMode.VIEW))
                 .collect(toImmutableSet());
     }
 
     @Override
-    public void checkCanKillQueryOwnedBy(SystemSecurityContext context, String queryOwner)
+    public void checkCanKillQueryOwnedBy(Identity identity, Identity queryOwner)
     {
-        if (!canAccessQuery(context.getIdentity(), Optional.of(queryOwner), QueryAccessRule.AccessMode.KILL)) {
-            denyViewQuery();
+        if (!canAccessQuery(identity, Optional.of(queryOwner.getUser()), QueryAccessRule.AccessMode.KILL)) {
+            denyKillQuery();
         }
     }
 
@@ -263,17 +281,17 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     }
 
     @Override
-    public void checkCanReadSystemInformation(SystemSecurityContext context)
+    public void checkCanReadSystemInformation(Identity identity)
     {
-        if (!checkCanSystemInformation(context.getIdentity(), SystemInformationRule.AccessMode.READ)) {
+        if (!checkCanSystemInformation(identity, SystemInformationRule.AccessMode.READ)) {
             denyReadSystemInformationAccess();
         }
     }
 
     @Override
-    public void checkCanWriteSystemInformation(SystemSecurityContext context)
+    public void checkCanWriteSystemInformation(Identity identity)
     {
-        if (!checkCanSystemInformation(context.getIdentity(), SystemInformationRule.AccessMode.WRITE)) {
+        if (!checkCanSystemInformation(identity, SystemInformationRule.AccessMode.WRITE)) {
             denyWriteSystemInformationAccess();
         }
     }
@@ -290,9 +308,8 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     }
 
     @Override
-    public void checkCanSetSystemSessionProperty(SystemSecurityContext context, String propertyName)
+    public void checkCanSetSystemSessionProperty(Identity identity, String propertyName)
     {
-        Identity identity = context.getIdentity();
         boolean allowed = sessionPropertyRules.stream()
                 .map(rule -> rule.match(identity.getUser(), identity.getEnabledRoles(), identity.getGroups(), propertyName))
                 .flatMap(Optional::stream)
@@ -304,11 +321,15 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     }
 
     @Override
-    public void checkCanAccessCatalog(SystemSecurityContext context, String catalogName)
+    public void checkCanSetSystemSessionProperty(Identity identity, QueryId queryId, String propertyName)
     {
-        if (!canAccessCatalog(context, catalogName, READ_ONLY)) {
-            denyCatalogAccess(catalogName);
-        }
+        checkCanSetSystemSessionProperty(identity, propertyName);
+    }
+
+    @Override
+    public boolean canAccessCatalog(SystemSecurityContext context, String catalogName)
+    {
+        return canAccessCatalog(context, catalogName, READ_ONLY);
     }
 
     @Override
@@ -367,6 +388,9 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     public void checkCanSetSchemaAuthorization(SystemSecurityContext context, CatalogSchemaName schema, TrinoPrincipal principal)
     {
         if (!isSchemaOwner(context, schema)) {
+            denySetSchemaAuthorization(schema.toString(), principal);
+        }
+        if (!checkCanSetAuthorization(context, principal)) {
             denySetSchemaAuthorization(schema.toString(), principal);
         }
     }
@@ -526,6 +550,13 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     }
 
     @Override
+    public Map<SchemaTableName, Set<String>> filterColumns(SystemSecurityContext context, String catalogName, Map<SchemaTableName, Set<String>> tableColumns)
+    {
+        // Default implementation is good enough. Explicit implementation is expected by the test though.
+        return SystemAccessControl.super.filterColumns(context, catalogName, tableColumns);
+    }
+
+    @Override
     public void checkCanAddColumn(SystemSecurityContext context, CatalogSchemaTableName table)
     {
         if (!checkTablePermission(context, table, OWNERSHIP)) {
@@ -561,6 +592,9 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     public void checkCanSetTableAuthorization(SystemSecurityContext context, CatalogSchemaTableName table, TrinoPrincipal principal)
     {
         if (!checkTablePermission(context, table, OWNERSHIP)) {
+            denySetTableAuthorization(table.toString(), principal);
+        }
+        if (!checkCanSetAuthorization(context, principal)) {
             denySetTableAuthorization(table.toString(), principal);
         }
     }
@@ -633,6 +667,9 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     public void checkCanSetViewAuthorization(SystemSecurityContext context, CatalogSchemaTableName view, TrinoPrincipal principal)
     {
         if (!checkTablePermission(context, view, OWNERSHIP)) {
+            denySetViewAuthorization(view.toString(), principal);
+        }
+        if (!checkCanSetAuthorization(context, principal)) {
             denySetViewAuthorization(view.toString(), principal);
         }
     }
@@ -712,24 +749,6 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     }
 
     @Override
-    public void checkCanGrantExecuteFunctionPrivilege(SystemSecurityContext context, String functionName, TrinoPrincipal grantee, boolean grantOption)
-    {
-        if (!checkFunctionPermission(context, functionName, CatalogFunctionAccessControlRule::canGrantExecuteFunction)) {
-            String granteeAsString = format("%s '%s'", grantee.getType().name().toLowerCase(ENGLISH), grantee.getName());
-            denyGrantExecuteFunctionPrivilege(functionName, context.getIdentity(), granteeAsString);
-        }
-    }
-
-    @Override
-    public void checkCanGrantExecuteFunctionPrivilege(SystemSecurityContext context, FunctionKind functionKind, CatalogSchemaRoutineName functionName, TrinoPrincipal grantee, boolean grantOption)
-    {
-        if (!checkFunctionPermission(context, functionKind, functionName, CatalogFunctionAccessControlRule::canGrantExecuteFunction)) {
-            String granteeAsString = format("%s '%s'", grantee.getType().name().toLowerCase(ENGLISH), grantee.getName());
-            denyGrantExecuteFunctionPrivilege(functionName.toString(), context.getIdentity(), granteeAsString);
-        }
-    }
-
-    @Override
     public void checkCanSetCatalogSessionProperty(SystemSecurityContext context, String catalogName, String propertyName)
     {
         Identity identity = context.getIdentity();
@@ -801,6 +820,24 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     }
 
     @Override
+    public void checkCanGrantEntityPrivilege(SystemSecurityContext context, EntityPrivilege privilege, EntityKindAndName entity, TrinoPrincipal grantee, boolean grantOption)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void checkCanDenyEntityPrivilege(SystemSecurityContext context, EntityPrivilege privilege, EntityKindAndName entity, TrinoPrincipal grantee)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void checkCanRevokeEntityPrivilege(SystemSecurityContext context, EntityPrivilege privilege, EntityKindAndName entity, TrinoPrincipal revokee, boolean grantOption)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public void checkCanCreateRole(SystemSecurityContext context, String role, Optional<TrinoPrincipal> grantor)
     {
         // file based
@@ -834,12 +871,6 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     }
 
     @Override
-    public void checkCanShowRoleAuthorizationDescriptors(SystemSecurityContext context)
-    {
-        denyShowRoleAuthorizationDescriptors();
-    }
-
-    @Override
     public void checkCanShowCurrentRoles(SystemSecurityContext context)
     {
         // users can see their currently enabled roles
@@ -860,27 +891,69 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     @Override
     public void checkCanExecuteProcedure(SystemSecurityContext systemSecurityContext, CatalogSchemaRoutineName procedure)
     {
-    }
-
-    @Override
-    public void checkCanExecuteFunction(SystemSecurityContext systemSecurityContext, String functionName)
-    {
-        if (!checkFunctionPermission(systemSecurityContext, functionName, CatalogFunctionAccessControlRule::canExecuteFunction)) {
-            denyExecuteFunction(functionName);
+        Identity identity = systemSecurityContext.getIdentity();
+        boolean allowed = canAccessCatalog(systemSecurityContext, procedure.getCatalogName(), READ_ONLY) &&
+                procedureRules.stream()
+                        .filter(rule -> rule.matches(identity.getUser(), identity.getEnabledRoles(), identity.getGroups(), procedure))
+                        .findFirst()
+                        .filter(CatalogProcedureAccessControlRule::canExecuteProcedure)
+                        .isPresent();
+        if (!allowed) {
+            denyExecuteProcedure(procedure.toString());
         }
     }
 
     @Override
-    public void checkCanExecuteFunction(SystemSecurityContext systemSecurityContext, FunctionKind functionKind, CatalogSchemaRoutineName functionName)
+    public boolean canExecuteFunction(SystemSecurityContext systemSecurityContext, CatalogSchemaRoutineName functionName)
     {
-        if (!checkFunctionPermission(systemSecurityContext, functionKind, functionName, CatalogFunctionAccessControlRule::canExecuteFunction)) {
-            denyExecuteFunction(functionName.toString());
-        }
+        return checkFunctionPermission(systemSecurityContext, functionName, CatalogFunctionAccessControlRule::canExecuteFunction);
+    }
+
+    @Override
+    public boolean canCreateViewWithExecuteFunction(SystemSecurityContext systemSecurityContext, CatalogSchemaRoutineName functionName)
+    {
+        return checkFunctionPermission(systemSecurityContext, functionName, CatalogFunctionAccessControlRule::canGrantExecuteFunction);
     }
 
     @Override
     public void checkCanExecuteTableProcedure(SystemSecurityContext systemSecurityContext, CatalogSchemaTableName table, String procedure)
     {
+    }
+
+    @Override
+    public void checkCanShowFunctions(SystemSecurityContext context, CatalogSchemaName schema)
+    {
+        if (!checkAnySchemaAccess(context, schema.getCatalogName(), schema.getSchemaName())) {
+            denyShowFunctions(schema.toString());
+        }
+    }
+
+    @Override
+    public Set<SchemaFunctionName> filterFunctions(SystemSecurityContext context, String catalogName, Set<SchemaFunctionName> functionNames)
+    {
+        return functionNames.stream()
+                .filter(functionName -> {
+                    CatalogSchemaRoutineName routineName = new CatalogSchemaRoutineName(catalogName, functionName.getSchemaName(), functionName.getFunctionName());
+                    return isSchemaOwner(context, new CatalogSchemaName(catalogName, functionName.getSchemaName())) ||
+                            checkAnyFunctionPermission(context, routineName, CatalogFunctionAccessControlRule::canExecuteFunction);
+                })
+                .collect(toImmutableSet());
+    }
+
+    @Override
+    public void checkCanCreateFunction(SystemSecurityContext systemSecurityContext, CatalogSchemaRoutineName functionName)
+    {
+        if (!checkFunctionPermission(systemSecurityContext, functionName, CatalogFunctionAccessControlRule::hasOwnership)) {
+            denyCreateFunction(functionName.toString());
+        }
+    }
+
+    @Override
+    public void checkCanDropFunction(SystemSecurityContext systemSecurityContext, CatalogSchemaRoutineName functionName)
+    {
+        if (!checkFunctionPermission(systemSecurityContext, functionName, CatalogFunctionAccessControlRule::hasOwnership)) {
+            denyDropFunction(functionName.toString());
+        }
     }
 
     @Override
@@ -933,12 +1006,6 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
         return masks.stream().findFirst();
     }
 
-    @Override
-    public List<ViewExpression> getColumnMasks(SystemSecurityContext context, CatalogSchemaTableName table, String columnName, Type type)
-    {
-        throw new UnsupportedOperationException();
-    }
-
     private boolean checkAnyCatalogAccess(SystemSecurityContext context, String catalogName)
     {
         if (canAccessCatalog(context, catalogName, OWNER)) {
@@ -953,13 +1020,6 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     private boolean canAccessCatalog(SystemSecurityContext context, String catalogName, CatalogAccessControlRule.AccessMode requiredAccess)
     {
         Identity identity = context.getIdentity();
-        Boolean result = canAccessCatalogDelegate(catalogName, requiredAccess, identity);
-        LOG.info("CATALOG Access check if " + identity.getUser() + " has access to catalog " + catalogName + " mode " + requiredAccess.toString()
-                + " result " + result);
-        return result;
-    }
-
-    private boolean canAccessCatalogDelegate(String catalogName, CatalogAccessControlRule.AccessMode requiredAccess, Identity identity) {
         for (CatalogAccessControlRule rule : catalogRules) {
             Optional<CatalogAccessControlRule.AccessMode> accessMode = rule.match(identity.getUser(), identity.getEnabledRoles(), identity.getGroups(), catalogName);
             if (accessMode.isPresent()) {
@@ -968,7 +1028,6 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
         }
         return false;
     }
-
 
     private boolean checkAnySchemaAccess(SystemSecurityContext context, String catalogName, String schemaName)
     {
@@ -984,13 +1043,6 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
         }
 
         Identity identity = context.getIdentity();
-        Boolean result = isSchemaOwnerDelegate(schema, identity);
-        LOG.info("SCHEMA Owner check if " + identity.getUser() + " owns catalog " + schema.getCatalogName() + " schema " + schema.getSchemaName()
-                + " result " + result);
-        return result;
-    }
-
-    private boolean isSchemaOwnerDelegate(CatalogSchemaName schema, Identity identity) {
         for (CatalogSchemaAccessControlRule rule : schemaRules) {
             Optional<Boolean> owner = rule.match(identity.getUser(), identity.getEnabledRoles(), identity.getGroups(), schema);
             if (owner.isPresent()) {
@@ -1008,14 +1060,7 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
     private boolean checkTablePermission(SystemSecurityContext context, CatalogSchemaTableName table, TableAccessControlRule.TablePrivilege requiredPrivilege)
     {
         CatalogAccessControlRule.AccessMode requiredCatalogAccess = requiredPrivilege == SELECT || requiredPrivilege == GRANT_SELECT ? READ_ONLY : ALL;
-
-        Boolean result = checkTablePermission(context, table, requiredCatalogAccess, privileges -> privileges.contains(requiredPrivilege));
-        LOG.info("TABLE Access check if " + context.getIdentity().getUser() + " has table catalog " + table.getCatalogName()
-                + " schema " + table.getSchemaTableName().getSchemaName()
-                + " table " + table.getSchemaTableName().getTableName()
-                + " access " + requiredCatalogAccess.toString()
-                + " result " + result);
-        return result;
+        return checkTablePermission(context, table, requiredCatalogAccess, privileges -> privileges.contains(requiredPrivilege));
     }
 
     private boolean checkTablePermission(
@@ -1041,48 +1086,69 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
         return false;
     }
 
-    private boolean checkFunctionPermission(SystemSecurityContext context, String functionName, Predicate<CatalogFunctionAccessControlRule> executePredicate)
+    private boolean checkFunctionPermission(SystemSecurityContext context, CatalogSchemaRoutineName functionName, Predicate<CatalogFunctionAccessControlRule> executePredicate)
     {
         Identity identity = context.getIdentity();
-        return functionRules.stream()
-                .filter(rule -> rule.matches(identity.getUser(), identity.getEnabledRoles(), identity.getGroups(), functionName))
-                .findFirst()
-                .filter(executePredicate)
-                .isPresent();
-    }
-
-    private boolean checkFunctionPermission(SystemSecurityContext context, FunctionKind functionKind, CatalogSchemaRoutineName functionName, Predicate<CatalogFunctionAccessControlRule> executePredicate)
-    {
-        CatalogAccessControlRule.AccessMode requiredCatalogAccess = switch (functionKind) {
-            case SCALAR, AGGREGATE, WINDOW -> READ_ONLY;
-            case TABLE -> ALL;
-        };
-        Identity identity = context.getIdentity();
-        return canAccessCatalog(context, functionName.getCatalogName(), requiredCatalogAccess) &&
+        return canAccessCatalog(context, functionName.getCatalogName(), READ_ONLY) &&
                 functionRules.stream()
-                        .filter(rule -> rule.matches(identity.getUser(), identity.getEnabledRoles(), identity.getGroups(), functionKind, functionName))
+                        .filter(rule -> rule.matches(identity.getUser(), identity.getEnabledRoles(), identity.getGroups(), functionName))
                         .findFirst()
                         .filter(executePredicate)
                         .isPresent();
     }
 
-    public static FileBasedSystemAccessControl.Builder builder()
+    private boolean checkAnyFunctionPermission(SystemSecurityContext context, CatalogSchemaRoutineName functionName, Predicate<CatalogFunctionAccessControlRule> executePredicate)
     {
-        return new FileBasedSystemAccessControl.Builder();
+        Identity identity = context.getIdentity();
+        return canAccessCatalog(context, functionName.getCatalogName(), READ_ONLY) &&
+                functionRules.stream()
+                        .filter(rule -> rule.matches(identity.getUser(), identity.getEnabledRoles(), identity.getGroups(), functionName))
+                        .findFirst()
+                        .filter(executePredicate)
+                        .isPresent();
+    }
+
+    private boolean checkCanSetAuthorization(SystemSecurityContext context, TrinoPrincipal principal)
+    {
+        Identity identity = context.getIdentity();
+        return authorizationRules.stream()
+                .flatMap(rule -> rule.match(identity.getUser(), identity.getGroups(), identity.getEnabledRoles(), principal).stream())
+                .findFirst()
+                .orElse(false);
+    }
+
+    @Override
+    public final void shutdown()
+    {
+        lifeCycleManager.stop();
+    }
+
+    public static ExternalAuthzSystemAccessControl.Builder builder()
+    {
+        return new ExternalAuthzSystemAccessControl.Builder();
     }
 
     public static final class Builder
     {
+        private LifeCycleManager lifeCycleManager;
         private List<CatalogAccessControlRule> catalogRules = ImmutableList.of(CatalogAccessControlRule.ALLOW_ALL);
         private Optional<List<QueryAccessRule>> queryAccessRules = Optional.empty();
         private Optional<List<ImpersonationRule>> impersonationRules = Optional.empty();
         private Optional<List<PrincipalUserMatchRule>> principalUserMatchRules = Optional.empty();
         private Optional<List<SystemInformationRule>> systemInformationRules = Optional.empty();
+        private List<AuthorizationRule> authorizationRules = ImmutableList.of();
         private List<CatalogSchemaAccessControlRule> schemaRules = ImmutableList.of(CatalogSchemaAccessControlRule.ALLOW_ALL);
         private List<CatalogTableAccessControlRule> tableRules = ImmutableList.of(CatalogTableAccessControlRule.ALLOW_ALL);
         private List<SessionPropertyAccessControlRule> sessionPropertyRules = ImmutableList.of(SessionPropertyAccessControlRule.ALLOW_ALL);
         private List<CatalogSessionPropertyAccessControlRule> catalogSessionPropertyRules = ImmutableList.of(CatalogSessionPropertyAccessControlRule.ALLOW_ALL);
-        private List<CatalogFunctionAccessControlRule> functionRules = ImmutableList.of(CatalogFunctionAccessControlRule.ALLOW_ALL);
+        private List<CatalogFunctionAccessControlRule> functionRules = ImmutableList.of(CatalogFunctionAccessControlRule.ALLOW_BUILTIN);
+        private List<CatalogProcedureAccessControlRule> procedureRules = ImmutableList.of(CatalogProcedureAccessControlRule.ALLOW_BUILTIN);
+
+        public ExternalAuthzSystemAccessControl.Builder setLifeCycleManager(LifeCycleManager lifeCycleManager)
+        {
+            this.lifeCycleManager = lifeCycleManager;
+            return this;
+        }
 
         @SuppressWarnings("unused")
         public ExternalAuthzSystemAccessControl.Builder denyAllAccess()
@@ -1092,11 +1158,13 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
             impersonationRules = Optional.of(ImmutableList.of());
             principalUserMatchRules = Optional.of(ImmutableList.of());
             systemInformationRules = Optional.of(ImmutableList.of());
+            authorizationRules = ImmutableList.of();
             schemaRules = ImmutableList.of();
             tableRules = ImmutableList.of();
             sessionPropertyRules = ImmutableList.of();
             catalogSessionPropertyRules = ImmutableList.of();
             functionRules = ImmutableList.of();
+            procedureRules = ImmutableList.of();
             return this;
         }
 
@@ -1130,6 +1198,12 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
             return this;
         }
 
+        public ExternalAuthzSystemAccessControl.Builder setAuthorizationRules(List<AuthorizationRule> authorizationRules)
+        {
+            this.authorizationRules = authorizationRules;
+            return this;
+        }
+
         public ExternalAuthzSystemAccessControl.Builder setSchemaRules(List<CatalogSchemaAccessControlRule> schemaRules)
         {
             this.schemaRules = schemaRules;
@@ -1160,20 +1234,30 @@ public class ExternalAuthzSystemAccessControl extends AllowAllSystemAccessContro
             return this;
         }
 
+        public ExternalAuthzSystemAccessControl.Builder setProcedureRules(List<CatalogProcedureAccessControlRule> procedureRules)
+        {
+            this.procedureRules = procedureRules;
+            return this;
+        }
+
         public ExternalAuthzSystemAccessControl build()
         {
             return new ExternalAuthzSystemAccessControl(
+                    lifeCycleManager,
                     catalogRules,
                     queryAccessRules,
                     impersonationRules,
                     principalUserMatchRules,
                     systemInformationRules,
+                    authorizationRules,
                     schemaRules,
                     tableRules,
                     sessionPropertyRules,
                     catalogSessionPropertyRules,
-                    functionRules);
+                    functionRules,
+                    procedureRules);
         }
     }
 }
+
 

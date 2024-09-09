@@ -1,7 +1,8 @@
+val trinoVersion:String by project
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 configurations {
@@ -12,9 +13,9 @@ configurations {
 val plugin by configurations.runtimeClasspath
 dependencies {
     listOf("trino-spi", "trino-plugin-toolkit").forEach { name ->
-        implementation("io.trino:${name}:418")
+        implementation("io.trino:${name}:$trinoVersion")
     }
-    implementation("com.google.guava:guava:30.1.1-jre")
+    implementation("com.google.guava:guava:33.3.0-jre")
     compileOnly("org.slf4j:slf4j-api:1.7.36")
 
 }
